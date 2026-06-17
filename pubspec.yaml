@@ -12,11 +12,12 @@ dependencies:
     sdk: flutter
 
   drift: ^2.18.0
-  sqlite3_flutter_libs: ^0.5.0
+  drift_sqflite: ^2.0.1
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.3
   path_provider: ^2.1.0
   path: ^1.9.0
   pdf: ^3.10.0
-  printing: ^5.12.0
   file_picker: ^8.0.0
   provider: ^6.1.0
   crypto: ^3.0.3
@@ -30,7 +31,14 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   drift_dev: ^2.18.0
-  build_runner: ^2.4.0
+  build_runner: ^2.4.9
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+      name_windows: winsqlite3
+      name: sqlite3
 
 flutter:
   uses-material-design: true

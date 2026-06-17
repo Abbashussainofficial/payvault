@@ -1,7 +1,5 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
+import 'package:drift_sqflite/drift_sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -243,11 +241,11 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
 
 // ════════════════════════════ DATABASE ══════════════════════════════════════
 
-LazyDatabase _openConnection() {
+QueryExecutor _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dbFolder.path, 'pay_vault.sqlite'));
-    return NativeDatabase(file);
+    final path = p.join(dbFolder.path, 'pay_vault.sqlite');
+    return SqfliteQueryExecutor(path: path, logStatements: false);
   });
 }
 

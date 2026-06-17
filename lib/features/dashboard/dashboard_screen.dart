@@ -11,6 +11,9 @@ class _DashboardData {
   final int pedoCount, securityCount, alfajarCount;
   final double pedoPayroll, securityPayroll, alfajarPayroll;
   final List<Employee> recentEmployees;
+  final List<double> chartTotals;   // 6 values oldest→newest
+  final List<String> chartLabels;   // 'Jan','Feb',…
+  final int pendingApprovals;
 
   const _DashboardData({
     required this.pedoCount,
@@ -20,10 +23,13 @@ class _DashboardData {
     required this.securityPayroll,
     required this.alfajarPayroll,
     required this.recentEmployees,
+    required this.chartTotals,
+    required this.chartLabels,
+    required this.pendingApprovals,
   });
 
   int get totalEmployees => pedoCount + securityCount + alfajarCount;
-  double get totalPayroll => pedoPayroll + securityPayroll + alfajarPayroll;
+  double get totalNetSalary => pedoPayroll + securityPayroll + alfajarPayroll;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -42,6 +48,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _error;
   final _db = AppDatabase.instance;
 
+  static const _monthNames = [
+    'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -52,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final now = DateTime.now();
       final all = await _db.employeesDao.getActiveEmployees();
-      final payroll = await _db.payrollRecordsDao.getRecordsByMonthYear(now.month, now.year);
+      final currentPayroll = await _db.payrollRecordsDao.getRecordsByMonthYear(now.month, now.year);
 
       final empMap = {for (final e in all) e.id: e};
       int pedoC = 0, secC = 0, alfC = 0;
@@ -60,26 +70,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       for (final e in all) {
         switch (e.category) {
-          case 'pedo':
-            pedoC++;
-          case 'security':
-            secC++;
-          case 'alfajar':
-            alfC++;
+          case 'pedo': pedoC++;
+          case 'security': secC++;
+          case 'alfajar': alfC++;
         }
       }
-      for (final r in payroll) {
+      for (final r in currentPayroll) {
         final emp = empMap[r.employeeId];
         if (emp == null) continue;
         switch (emp.category) {
-          case 'pedo':
-            pedoP += r.netSalary;
-          case 'security':
-            secP += r.netSalary;
-          case 'alfajar':
-            alfP += r.netSalary;
+          case 'pedo': pedoP += r.netSalary;
+          case 'security': secP += r.netSalary;
+          case 'alfajar': alfP += r.netSalary;
         }
       }
+
+      // 6-month chart data
+      final chartTotals = <double>[];
+      final chartLabels = <String>[];
+      for (int i = 5; i >= 0; i--) {
+        final dt = DateTime(now.year, now.month - i, 1);
+        final records = i == 0
+            ? currentPayroll
+            : await _db.payrollRecordsDao.getRecordsByMonthYear(dt.month, dt.year);
+        chartTotals.add(records.fold(0.0, (s, r) => s + r.netSalary));
+        chartLabels.add(_monthNames[dt.month - 1]);
+      }
+
+      // Pending approvals = active employees with no payroll this month
+      final processedIds = currentPayroll.map((r) => r.employeeId).toSet();
+      final pending = all.where((e) => !processedIds.contains(e.id)).length;
 
       final sorted = [...all]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -93,6 +113,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             securityPayroll: secP,
             alfajarPayroll: alfP,
             recentEmployees: sorted.take(5).toList(),
+            chartTotals: chartTotals,
+            chartLabels: chartLabels,
+            pendingApprovals: pending,
           );
           _loading = false;
         });
@@ -112,12 +135,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _ErrorState(error: _error!, onRetry: () { setState(() { _loading = true; _error = null; }); _load(); })
+              ? _ErrorState(
+                  error: _error!,
+                  onRetry: () { setState(() { _loading = true; _error = null; }); _load(); },
+                )
               : _Body(
                   data: _data!,
                   monthLabel: monthLabel,
-                  month: now.month,
-                  year: now.year,
                   onNavigate: widget.onNavigate,
                 ),
     );
@@ -129,16 +153,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class _Body extends StatelessWidget {
   final _DashboardData data;
   final String monthLabel;
-  final int month, year;
   final ValueChanged<String>? onNavigate;
 
-  const _Body({
-    required this.data,
-    required this.monthLabel,
-    required this.month,
-    required this.year,
-    this.onNavigate,
-  });
+  const _Body({required this.data, required this.monthLabel, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -147,22 +164,22 @@ class _Body extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Header(monthLabel: monthLabel, onRefresh: null),
-          const SizedBox(height: 20),
-          _StatsRow(data: data),
-          const SizedBox(height: 20),
+          _Header(monthLabel: monthLabel),
+          const SizedBox(height: 24),
           _CategoryCards(data: data, onNavigate: onNavigate),
           const SizedBox(height: 24),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(flex: 3, child: _PayrollChart(data: data)),
+                Expanded(flex: 3, child: _ExpenditureChart(data: data)),
                 const SizedBox(width: 16),
                 Expanded(flex: 2, child: _RecentActivity(employees: data.recentEmployees)),
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          _BottomStats(data: data),
         ],
       ),
     );
@@ -173,95 +190,47 @@ class _Body extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final String monthLabel;
-  final VoidCallback? onRefresh;
-  const _Header({required this.monthLabel, this.onRefresh});
+  const _Header({required this.monthLabel});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Welcome to PayVault', style: tt.headlineLarge),
-            const SizedBox(height: 2),
-            Text(monthLabel, style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.55))),
+            Text('Payroll Overview', style: tt.headlineLarge?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              'Manage and monitor payroll across all departments.',
+              style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.55)),
+            ),
           ],
         ),
         const Spacer(),
-        if (onRefresh != null)
-          IconButton(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_outlined),
-            tooltip: 'Refresh',
-          ),
-      ],
-    );
-  }
-}
-
-// ── Stats row ─────────────────────────────────────────────────────────────────
-
-class _StatsRow extends StatelessWidget {
-  final _DashboardData data;
-  const _StatsRow({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    final fmt = NumberFormat.compact(locale: 'en_US');
-    return Row(
-      children: [
-        Expanded(child: _StatCard(label: 'Total Employees', value: '${data.totalEmployees}', icon: Icons.people_outline, iconColor: const Color(0xFF1565C0))),
-        const SizedBox(width: 12),
-        Expanded(child: _StatCard(label: 'Monthly Payroll', value: 'PKR ${fmt.format(data.totalPayroll)}', icon: Icons.account_balance_outlined, iconColor: const Color(0xFF2E7D32))),
-        const SizedBox(width: 12),
-        Expanded(child: _StatCard(label: 'PEDO Staff', value: '${data.pedoCount}', icon: Icons.account_balance_outlined, iconColor: const Color(0xFF1565C0))),
-        const SizedBox(width: 12),
-        Expanded(child: _StatCard(label: 'Security + Al Fajar', value: '${data.securityCount + data.alfajarCount}', icon: Icons.shield_outlined, iconColor: const Color(0xFF6A1B9A))),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label, value;
-  final IconData icon;
-  final Color iconColor;
-  const _StatCard({required this.label, required this.value, required this.icon, required this.iconColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+            Text(
+              'CURRENT PERIOD',
+              style: tt.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.45),
+                letterSpacing: 1.0,
+                fontWeight: FontWeight.w600,
               ),
-              child: Icon(icon, size: 19, color: iconColor),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(value, style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-                  Text(label, style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.55))),
-                ],
-              ),
+            const SizedBox(height: 2),
+            Text(
+              monthLabel,
+              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.primary),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }
@@ -275,43 +244,50 @@ class _CategoryCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat.compact(locale: 'en_US');
+    final fmt = NumberFormat('#,##0', 'en_US');
+    final fmtPay = NumberFormat('#,##0', 'en_US');
+
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: _CatCard(
-            label: 'PEDO Employees',
+            badge: 'PUBLIC SECTOR',
+            badgeColor: const Color(0xFF1565C0),
+            title: 'PEDO',
             icon: Icons.account_balance_outlined,
-            color: const Color(0xFF1565C0),
             employeeCount: data.pedoCount,
             payroll: data.pedoPayroll,
             fmt: fmt,
-            onView: () => onNavigate?.call(NavRoute.cat('pedo', 'list')),
+            fmtPay: fmtPay,
+            onTap: () => onNavigate?.call(NavRoute.cat('pedo', 'list')),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
           child: _CatCard(
-            label: 'Security Guards',
+            badge: 'EXTERNAL AGENCY',
+            badgeColor: const Color(0xFF0D7377),
+            title: 'Security Guards',
             icon: Icons.shield_outlined,
-            color: const Color(0xFF2E7D32),
             employeeCount: data.securityCount,
             payroll: data.securityPayroll,
             fmt: fmt,
-            onView: () => onNavigate?.call(NavRoute.cat('security', 'list')),
+            fmtPay: fmtPay,
+            onTap: () => onNavigate?.call(NavRoute.cat('security', 'list')),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
           child: _CatCard(
-            label: 'Al Fajar',
-            icon: Icons.star_outline,
-            color: const Color(0xFF6A1B9A),
+            badge: 'CONTRACTUAL',
+            badgeColor: const Color(0xFF2E7D32),
+            title: 'Al Fajar',
+            icon: Icons.cleaning_services_outlined,
             employeeCount: data.alfajarCount,
             payroll: data.alfajarPayroll,
             fmt: fmt,
-            onView: () => onNavigate?.call(NavRoute.cat('alfajar', 'list')),
+            fmtPay: fmtPay,
+            onTap: () => onNavigate?.call(NavRoute.cat('alfajar', 'list')),
           ),
         ),
       ],
@@ -320,28 +296,142 @@ class _CategoryCards extends StatelessWidget {
 }
 
 class _CatCard extends StatelessWidget {
-  final String label;
+  final String badge, title;
+  final Color badgeColor;
   final IconData icon;
-  final Color color;
   final int employeeCount;
   final double payroll;
-  final NumberFormat fmt;
-  final VoidCallback onView;
+  final NumberFormat fmt, fmtPay;
+  final VoidCallback onTap;
 
   const _CatCard({
-    required this.label,
+    required this.badge,
+    required this.badgeColor,
+    required this.title,
     required this.icon,
-    required this.color,
     required this.employeeCount,
     required this.payroll,
     required this.fmt,
-    required this.onView,
+    required this.fmtPay,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: badgeColor.withValues(alpha: isDark ? 0.25 : 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      badge,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? badgeColor.withValues(alpha: 0.9) : badgeColor,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: badgeColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: badgeColor, size: 22),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Total Employees',
+                        style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        fmt.format(employeeCount),
+                        style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Monthly Payroll',
+                        style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        payroll > 0 ? 'Rs. ${fmtPay.format(payroll)}' : '—',
+                        style: tt.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: cs.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Payroll Expenditure History chart ─────────────────────────────────────────
+
+class _ExpenditureChart extends StatelessWidget {
+  final _DashboardData data;
+  const _ExpenditureChart({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fmt = NumberFormat.compact(locale: 'en_US');
+
+    final totals = data.chartTotals;
+    final labels = data.chartLabels;
+    final maxVal = totals.fold(0.0, (m, v) => v > m ? v : m);
+    final chartMax = maxVal > 0 ? maxVal * 1.25 : 100000.0;
+    final hasData = maxVal > 0;
+
+    final spots = List.generate(totals.length, (i) => FlSpot(i.toDouble(), totals[i]));
 
     return Card(
       child: Padding(
@@ -351,140 +441,72 @@ class _CatCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                Text('Payroll Expenditure History', style: tt.headlineSmall),
+                const Spacer(),
                 Container(
-                  width: 42,
-                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.15)),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(icon, color: color, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Last 6 Months', style: tt.labelSmall),
+                      const SizedBox(width: 4),
+                      Icon(Icons.keyboard_arrow_down, size: 16, color: cs.onSurface.withValues(alpha: 0.5)),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            _Row(
-              label: 'Active Employees',
-              value: '$employeeCount',
-              valueColor: color,
-            ),
-            const SizedBox(height: 8),
-            _Row(
-              label: 'Monthly Payroll',
-              value: payroll > 0 ? 'PKR ${fmt.format(payroll)}' : '—',
-              valueColor: cs.onSurface,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onView,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: color,
-                  side: BorderSide(color: color.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                ),
-                icon: Icon(Icons.arrow_forward, size: 15, color: color),
-                label: Text('View Employees', style: TextStyle(color: color, fontSize: 13)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Row extends StatelessWidget {
-  final String label, value;
-  final Color valueColor;
-  const _Row({required this.label, required this.value, required this.valueColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.55))),
-        Text(value, style: tt.titleSmall?.copyWith(color: valueColor, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-}
-
-// ── Payroll chart ─────────────────────────────────────────────────────────────
-
-class _PayrollChart extends StatelessWidget {
-  final _DashboardData data;
-  const _PayrollChart({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final values = [data.pedoPayroll, data.securityPayroll, data.alfajarPayroll];
-    final maxVal = values.fold(0.0, (m, v) => v > m ? v : m);
-    final chartMax = maxVal > 0 ? maxVal * 1.3 : 100000.0;
-    final hasData = maxVal > 0;
-
-    final colors = [const Color(0xFF1565C0), const Color(0xFF2E7D32), const Color(0xFF6A1B9A)];
-    final labels = ['PEDO', 'Security', 'Al Fajar'];
-    final fmt = NumberFormat.compact(locale: 'en_US');
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Payroll by Category', style: tt.headlineSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Current month net salaries',
-              style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             SizedBox(
               height: 200,
               child: hasData
-                  ? BarChart(
-                      BarChartData(
-                        alignment: BarChartAlignment.spaceAround,
+                  ? LineChart(
+                      LineChartData(
+                        minY: 0,
                         maxY: chartMax,
-                        barGroups: List.generate(3, (i) {
-                          return BarChartGroupData(
-                            x: i,
-                            barRods: [
-                              BarChartRodData(
-                                toY: values[i],
-                                color: colors[i],
-                                width: 44,
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: true,
+                            color: cs.primary,
+                            barWidth: 2.5,
+                            dotData: FlDotData(
+                              show: true,
+                              getDotPainter: (spot, _, _, _) => FlDotCirclePainter(
+                                radius: 4,
+                                color: cs.primary,
+                                strokeWidth: 2,
+                                strokeColor: isDark ? const Color(0xFF252537) : Colors.white,
                               ),
-                            ],
-                          );
-                        }),
+                            ),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              gradient: LinearGradient(
+                                colors: [
+                                  cs.primary.withValues(alpha: 0.15),
+                                  cs.primary.withValues(alpha: 0.0),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ],
                         titlesData: FlTitlesData(
                           leftTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
-                              reservedSize: 56,
-                              getTitlesWidget: (v, _) => Text(
-                                fmt.format(v),
-                                style: tt.labelSmall?.copyWith(fontSize: 10),
-                              ),
+                              reservedSize: 52,
+                              getTitlesWidget: (v, _) => v == 0
+                                  ? const SizedBox.shrink()
+                                  : Text(
+                                      fmt.format(v),
+                                      style: tt.labelSmall?.copyWith(fontSize: 10),
+                                    ),
                             ),
                           ),
                           bottomTitles: AxisTitles(
@@ -495,10 +517,10 @@ class _PayrollChart extends StatelessWidget {
                                 final i = v.toInt();
                                 if (i < 0 || i >= labels.length) return const SizedBox.shrink();
                                 return Padding(
-                                  padding: const EdgeInsets.only(top: 6),
+                                  padding: const EdgeInsets.only(top: 8),
                                   child: Text(
                                     labels[i],
-                                    style: tt.labelSmall?.copyWith(color: colors[i], fontWeight: FontWeight.w600),
+                                    style: tt.labelSmall?.copyWith(fontSize: 11),
                                   ),
                                 );
                               },
@@ -511,17 +533,21 @@ class _PayrollChart extends StatelessWidget {
                           show: true,
                           drawVerticalLine: false,
                           getDrawingHorizontalLine: (_) => FlLine(
-                            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.07),
+                            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
                             strokeWidth: 1,
                           ),
                         ),
                         borderData: FlBorderData(show: false),
-                        barTouchData: BarTouchData(
-                          touchTooltipData: BarTouchTooltipData(
-                            getTooltipItem: (group, _, rod, _) => BarTooltipItem(
-                              'PKR ${fmt.format(rod.toY)}',
-                              TextStyle(color: colors[group.x], fontWeight: FontWeight.w600, fontSize: 12),
-                            ),
+                        lineTouchData: LineTouchData(
+                          touchTooltipData: LineTouchTooltipData(
+                            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+                              'Rs. ${fmt.format(s.y)}',
+                              TextStyle(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            )).toList(),
                           ),
                         ),
                       ),
@@ -530,12 +556,9 @@ class _PayrollChart extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.bar_chart_outlined, size: 48, color: cs.onSurface.withValues(alpha: 0.2)),
+                          Icon(Icons.show_chart, size: 48, color: cs.onSurface.withValues(alpha: 0.2)),
                           const SizedBox(height: 8),
-                          Text(
-                            'No payroll processed yet',
-                            style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4)),
-                          ),
+                          Text('No payroll data yet', style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
                         ],
                       ),
                     ),
@@ -556,9 +579,26 @@ class _RecentActivity extends StatelessWidget {
   static const _catLabels = {'pedo': 'PEDO', 'security': 'Security', 'alfajar': 'Al Fajar'};
   static const _catColors = {
     'pedo': Color(0xFF1565C0),
-    'security': Color(0xFF2E7D32),
-    'alfajar': Color(0xFF6A1B9A),
+    'security': Color(0xFF0D7377),
+    'alfajar': Color(0xFF2E7D32),
   };
+
+  String _relativeDate(String createdAt) {
+    try {
+      final dt = DateTime.parse(createdAt);
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inDays == 0) {
+        return 'Today at ${DateFormat('hh:mm a').format(dt)}';
+      } else if (diff.inDays == 1) {
+        return 'Yesterday';
+      } else {
+        return DateFormat('MMM d, yyyy').format(dt);
+      }
+    } catch (_) {
+      return createdAt;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -572,11 +612,6 @@ class _RecentActivity extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Recent Activity', style: tt.headlineSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Latest employees added',
-              style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
-            ),
             const SizedBox(height: 16),
             if (employees.isEmpty)
               Expanded(
@@ -586,57 +621,49 @@ class _RecentActivity extends StatelessWidget {
                     children: [
                       Icon(Icons.history, size: 40, color: cs.onSurface.withValues(alpha: 0.2)),
                       const SizedBox(height: 8),
-                      Text(
-                        'No employees yet',
-                        style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4)),
-                      ),
+                      Text('No activity yet', style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
                     ],
                   ),
                 ),
               )
-            else
+            else ...[
               ...employees.map((e) {
                 final catColor = _catColors[e.category] ?? cs.primary;
                 final catLabel = _catLabels[e.category] ?? e.category;
-                String dateStr = '';
-                try {
-                  final dt = DateTime.parse(e.createdAt);
-                  dateStr = DateFormat('dd MMM yyyy').format(dt);
-                } catch (_) {
-                  dateStr = e.createdAt;
-                }
+                final dateStr = _relativeDate(e.createdAt);
+
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(top: 5),
-                        decoration: BoxDecoration(color: catColor, shape: BoxShape.circle),
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.person_add_outlined, size: 18, color: catColor),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(e.fullName, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: catColor.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(catLabel, style: TextStyle(fontSize: 10, color: catColor, fontWeight: FontWeight.w600)),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(dateStr, style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.45))),
-                              ],
+                            RichText(
+                              text: TextSpan(
+                                style: tt.bodySmall?.copyWith(color: cs.onSurface),
+                                children: [
+                                  TextSpan(text: e.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  const TextSpan(text: ' added to '),
+                                  TextSpan(text: catLabel, style: TextStyle(fontWeight: FontWeight.w600, color: catColor)),
+                                  const TextSpan(text: ' category.'),
+                                ],
+                              ),
                             ),
+                            const SizedBox(height: 3),
+                            Text(dateStr, style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.45))),
                           ],
                         ),
                       ),
@@ -644,6 +671,132 @@ class _RecentActivity extends StatelessWidget {
                   ),
                 );
               }),
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () {},
+                child: Text(
+                  'View All Activity',
+                  style: tt.labelMedium?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Bottom stats row ──────────────────────────────────────────────────────────
+
+class _BottomStats extends StatelessWidget {
+  final _DashboardData data;
+  const _BottomStats({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat.compact(locale: 'en_US');
+
+    return Row(
+      children: [
+        Expanded(
+          child: _StatCard(
+            icon: Icons.people_outline,
+            iconColor: const Color(0xFF1565C0),
+            label: 'Total Employees',
+            value: '${data.totalEmployees}',
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _StatCard(
+            icon: Icons.account_balance_wallet_outlined,
+            iconColor: const Color(0xFF2E7D32),
+            label: 'Total Net Salary',
+            value: data.totalNetSalary > 0 ? 'Rs. ${fmt.format(data.totalNetSalary)}' : '—',
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _StatCard(
+            icon: Icons.pending_actions_outlined,
+            iconColor: const Color(0xFFE67E22),
+            label: 'Pending Approvals',
+            value: '${data.pendingApprovals}',
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _StatCard(
+            icon: Icons.check_circle_outline,
+            iconColor: const Color(0xFF27AE60),
+            label: 'System Status',
+            value: 'Online',
+            valueColor: const Color(0xFF27AE60),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label, value;
+  final Color? valueColor;
+
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: tt.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: valueColor ?? cs.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

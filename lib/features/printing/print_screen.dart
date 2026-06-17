@@ -1,9 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/database/database.dart';
 import 'print_service.dart';
@@ -39,9 +39,10 @@ class _PrintScreenState extends State<PrintScreen> {
   final _vNoCtrl = TextEditingController();
 
   bool _loadingEmployees = true;
-  bool _generatingPdf = false;
-  bool _bulkPrinting = false;
-  Uint8List? _previewBytes;
+  bool _generating = false;
+  bool _bulkGenerating = false;
+  String? _lastPdfPath;
+  String? _lastPdfLabel;
 
   final _currency = NumberFormat.currency(
     locale: 'en_PK',
@@ -65,15 +66,16 @@ class _PrintScreenState extends State<PrintScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() { _loadingEmployees = true; _previewBytes = null; });
+    setState(() {
+      _loadingEmployees = true;
+      _lastPdfPath = null;
+      _lastPdfLabel = null;
+    });
     try {
-      final emps = await _db.employeesDao
-          .getEmployeesByCategory(widget.category);
-      final records = await _db.payrollRecordsDao
-          .getRecordsByMonthYear(_month, _year);
+      final emps = await _db.employeesDao.getEmployeesByCategory(widget.category);
+      final records = await _db.payrollRecordsDao.getRecordsByMonthYear(_month, _year);
       final rMap = {for (final r in records) r.employeeId: r};
 
-      // Keep selected employee valid
       final stillValid = _selectedEmployee != null &&
           emps.any((e) => e.id == _selectedEmployee!.id);
 
@@ -96,7 +98,8 @@ class _PrintScreenState extends State<PrintScreen> {
     setState(() {
       _month = m;
       _year = y;
-      _previewBytes = null;
+      _lastPdfPath = null;
+      _lastPdfLabel = null;
     });
     _loadData();
   }
@@ -104,7 +107,21 @@ class _PrintScreenState extends State<PrintScreen> {
   List<Employee> get _processedEmployees =>
       _employees.where((e) => _recordMap.containsKey(e.id)).toList();
 
-  Future<void> _generatePreview() async {
+  // Saves bytes to a temp PDF file and opens it with the Windows default viewer.
+  Future<void> _openPdfFile(Uint8List bytes, String fileName) async {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}${Platform.pathSeparator}$fileName');
+    await file.writeAsBytes(bytes, flush: true);
+    await Process.run('cmd', ['/c', 'start', '', file.path]);
+    if (mounted) {
+      setState(() {
+        _lastPdfPath = file.path;
+        _lastPdfLabel = fileName;
+      });
+    }
+  }
+
+  Future<void> _generateAndOpen() async {
     final emp = _selectedEmployee;
     if (emp == null) return;
     final record = _recordMap[emp.id];
@@ -113,7 +130,7 @@ class _PrintScreenState extends State<PrintScreen> {
           isError: true);
       return;
     }
-    setState(() { _generatingPdf = true; _previewBytes = null; });
+    setState(() => _generating = true);
     try {
       final bytes = widget.category == 'pedo'
           ? await PrintService.generatePedoPayBill(
@@ -130,28 +147,25 @@ class _PrintScreenState extends State<PrintScreen> {
               year: _year,
               category: widget.category,
             );
-      setState(() => _previewBytes = bytes);
+      final fileName =
+          '${widget.category}_${emp.employeeId}_${_monthNames[_month - 1]}_$_year.pdf';
+      await _openPdfFile(bytes, fileName);
     } catch (e) {
       _showSnack('PDF error: $e', isError: true);
     } finally {
-      if (mounted) setState(() => _generatingPdf = false);
+      if (mounted) setState(() => _generating = false);
     }
   }
 
-  Future<void> _printSingle() async {
-    final bytes = _previewBytes;
-    if (bytes == null) return;
-    await Printing.layoutPdf(onLayout: (_) async => bytes);
-  }
-
-  Future<void> _bulkPrint() async {
+  Future<void> _bulkOpen() async {
     final processed = _processedEmployees;
     if (processed.isEmpty) {
-      _showSnack('No processed records for ${_monthNames[_month - 1]} $_year.',
+      _showSnack(
+          'No processed records for ${_monthNames[_month - 1]} $_year.',
           isError: true);
       return;
     }
-    setState(() => _bulkPrinting = true);
+    setState(() => _bulkGenerating = true);
     try {
       final items = processed
           .map((e) => (employee: e, record: _recordMap[e.id]!))
@@ -162,12 +176,20 @@ class _PrintScreenState extends State<PrintScreen> {
         year: _year,
         category: widget.category,
       );
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      final fileName =
+          '${widget.category}_bulk_${_monthNames[_month - 1]}_$_year.pdf';
+      await _openPdfFile(bytes, fileName);
     } catch (e) {
-      _showSnack('Bulk print error: $e', isError: true);
+      _showSnack('Bulk PDF error: $e', isError: true);
     } finally {
-      if (mounted) setState(() => _bulkPrinting = false);
+      if (mounted) setState(() => _bulkGenerating = false);
     }
+  }
+
+  Future<void> _reopenLast() async {
+    final path = _lastPdfPath;
+    if (path == null) return;
+    await Process.run('cmd', ['/c', 'start', '', path]);
   }
 
   void _showSnack(String msg, {bool isError = false}) {
@@ -193,7 +215,6 @@ class _PrintScreenState extends State<PrintScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Left control panel
                 SizedBox(
                   width: 320,
                   child: _buildControlPanel(cs),
@@ -203,8 +224,7 @@ class _PrintScreenState extends State<PrintScreen> {
                   thickness: 1,
                   color: cs.outlineVariant,
                 ),
-                // Right preview panel
-                Expanded(child: _buildPreviewPanel(cs)),
+                Expanded(child: _buildStatusPanel(cs)),
               ],
             ),
           ),
@@ -285,7 +305,6 @@ class _PrintScreenState extends State<PrintScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Employee dropdown
           if (_loadingEmployees)
             const Center(
               child: Padding(
@@ -344,16 +363,12 @@ class _PrintScreenState extends State<PrintScreen> {
                     ]),
                   );
                 }).toList(),
-                onChanged: (e) => setState(() {
-                  _selectedEmployee = e;
-                  _previewBytes = null;
-                }),
+                onChanged: (e) => setState(() => _selectedEmployee = e),
               ),
             ),
 
           const SizedBox(height: 10),
 
-          // V.No field (PEDO only)
           if (widget.category == 'pedo') ...[
             TextField(
               controller: _vNoCtrl,
@@ -366,7 +381,6 @@ class _PrintScreenState extends State<PrintScreen> {
             const SizedBox(height: 10),
           ],
 
-          // Selected employee payroll info
           if (_selectedEmployee != null) ...[
             Builder(builder: (context) {
               final rec = _recordMap[_selectedEmployee!.id];
@@ -421,38 +435,31 @@ class _PrintScreenState extends State<PrintScreen> {
             const SizedBox(height: 12),
           ],
 
-          // Preview + Print buttons
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _selectedEmployee == null || _generatingPdf
-                    ? null
-                    : _generatePreview,
-                icon: _generatingPdf
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.preview_outlined, size: 16),
-                label: const Text('Preview'),
-              ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: (_selectedEmployee == null ||
+                      _generating ||
+                      _bulkGenerating)
+                  ? null
+                  : _generateAndOpen,
+              icon: _generating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.picture_as_pdf_outlined, size: 16),
+              label: Text(_generating ? 'Generating…' : 'Generate & Open PDF'),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _previewBytes == null ? null : _printSingle,
-                icon: const Icon(Icons.print_outlined, size: 16),
-                label: const Text('Print'),
-              ),
-            ),
-          ]),
+          ),
 
           const SizedBox(height: 24),
           Divider(color: cs.outlineVariant),
           const SizedBox(height: 16),
 
-          // ── Bulk print section ────────────────────────────────────────────
+          // ── Bulk section ──────────────────────────────────────────────────
           Text(
             'BULK PRINT',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -493,19 +500,22 @@ class _PrintScreenState extends State<PrintScreen> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: (processed.isEmpty || _bulkPrinting)
-                  ? null
-                  : _bulkPrint,
-              icon: _bulkPrinting
+              onPressed:
+                  (processed.isEmpty || _bulkGenerating || _generating)
+                      ? null
+                      : _bulkOpen,
+              icon: _bulkGenerating
                   ? const SizedBox(
                       width: 14,
                       height: 14,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white),
                     )
-                  : const Icon(Icons.print_outlined, size: 16),
+                  : const Icon(Icons.picture_as_pdf_outlined, size: 16),
               label: Text(
-                'Bulk Print All  (${processed.length})',
+                _bulkGenerating
+                    ? 'Generating…'
+                    : 'Bulk Open All  (${processed.length})',
               ),
             ),
           ),
@@ -544,19 +554,54 @@ class _PrintScreenState extends State<PrintScreen> {
     );
   }
 
-  // ── Preview panel ─────────────────────────────────────────────────────────
+  // ── Status panel (replaces PdfPreview) ────────────────────────────────────
 
-  Widget _buildPreviewPanel(ColorScheme cs) {
-    if (_previewBytes != null) {
-      return PdfPreview(
-        key: ValueKey(_previewBytes.hashCode),
-        build: (format) async => _previewBytes!,
-        allowPrinting: true,
-        allowSharing: false,
-        canChangePageFormat: false,
-        initialPageFormat: PdfPageFormat.a4,
-        pdfFileName:
-            '${widget.category}_payslip_${_monthNames[_month - 1]}_$_year.pdf',
+  Widget _buildStatusPanel(ColorScheme cs) {
+    if (_lastPdfPath != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check_circle_outline_rounded,
+                size: 72,
+                color: Colors.green.shade500,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'PDF opened in your default viewer',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _lastPdfLabel ?? '',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.5),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _lastPdfPath!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.35),
+                  fontSize: 10,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: _reopenLast,
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Reopen PDF'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -571,14 +616,14 @@ class _PrintScreenState extends State<PrintScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'PDF Preview',
+            'Generate a PDF',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: cs.onSurface.withValues(alpha: 0.4),
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Select an employee with a payroll record,\nthen tap Preview.',
+            'Select an employee with a payroll record,\nthen tap Generate & Open PDF.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: cs.onSurface.withValues(alpha: 0.35),
             ),

@@ -359,95 +359,97 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
   // ── Table ─────────────────────────────────────────────────────────────────
 
+  Widget _col(int flex, Widget child, {bool numeric = false}) => Expanded(
+    flex: flex,
+    child: Align(
+      alignment: numeric ? Alignment.centerRight : Alignment.centerLeft,
+      child: child,
+    ),
+  );
+
   Widget _buildTable(ColorScheme cs) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerBg = isDark ? cs.surfaceContainerHighest : cs.surfaceContainerLowest;
+    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: cs.onSurface.withValues(alpha: 0.7),
+    );
 
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minWidth: MediaQuery.of(context).size.width - 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            color: headerBg,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              children: [
+                _col(1, Text('#', style: labelStyle)),
+                _col(3, Text('Employee ID', style: labelStyle)),
+                _col(4, Text('Name', style: labelStyle)),
+                _col(3, Text('Base Salary', style: labelStyle), numeric: true),
+                _col(3, Text('Allowances', style: labelStyle), numeric: true),
+                _col(3, Text('Deductions', style: labelStyle), numeric: true),
+                _col(3, Text('Net Salary', style: labelStyle), numeric: true),
+                _col(2, Text('Status', style: labelStyle)),
+              ],
+            ),
           ),
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(
-              isDark
-                  ? cs.surfaceContainerHighest
-                  : cs.surfaceContainerLowest,
-            ),
-            columnSpacing: 24,
-            headingTextStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface.withValues(alpha: 0.7),
-            ),
-            columns: const [
-              DataColumn(label: Text('#')),
-              DataColumn(label: Text('Employee ID')),
-              DataColumn(label: Text('Name')),
-              DataColumn(label: Text('Base Salary'), numeric: true),
-              DataColumn(label: Text('Allowances'), numeric: true),
-              DataColumn(label: Text('Deductions'), numeric: true),
-              DataColumn(label: Text('Net Salary'), numeric: true),
-              DataColumn(label: Text('Status')),
-            ],
-            rows: List.generate(_rows.length, (i) {
-              final row = _rows[i];
-              return DataRow(
-                cells: [
-                  DataCell(Text(
-                    '${i + 1}',
-                    style: TextStyle(
-                      color: cs.onSurface.withValues(alpha: 0.45),
-                      fontSize: 12,
-                    ),
-                  )),
-                  DataCell(Text(
-                    row.employee.employeeId,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                  )),
-                  DataCell(Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          const Divider(height: 1),
+          // Data rows
+          ..._rows.asMap().entries.map((entry) {
+            final i = entry.key;
+            final row = entry.value;
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        row.employee.fullName,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        row.employee.designation,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: cs.onSurface.withValues(alpha: 0.5),
-                        ),
-                      ),
+                      _col(1, Text(
+                        '${i + 1}',
+                        style: TextStyle(color: cs.onSurface.withValues(alpha: 0.45), fontSize: 12),
+                      )),
+                      _col(3, Text(
+                        row.employee.employeeId,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      )),
+                      _col(4, Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(row.employee.fullName, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          Text(
+                            row.employee.designation,
+                            style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5)),
+                          ),
+                        ],
+                      )),
+                      _col(3, Text(_currency.format(row.baseSalary)), numeric: true),
+                      _col(3, Text(
+                        _currency.format(row.totalAllowances),
+                        style: TextStyle(color: Colors.green.shade700),
+                      ), numeric: true),
+                      _col(3, Text(
+                        _currency.format(row.totalDeductions),
+                        style: TextStyle(color: Colors.red.shade600),
+                      ), numeric: true),
+                      _col(3, Text(
+                        _currency.format(row.netSalary),
+                        style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary),
+                      ), numeric: true),
+                      _col(2, _statusCell(row, cs)),
                     ],
-                  )),
-                  DataCell(Text(_currency.format(row.baseSalary))),
-                  DataCell(Text(
-                    _currency.format(row.totalAllowances),
-                    style: TextStyle(color: Colors.green.shade700),
-                  )),
-                  DataCell(Text(
-                    _currency.format(row.totalDeductions),
-                    style: TextStyle(color: Colors.red.shade600),
-                  )),
-                  DataCell(Text(
-                    _currency.format(row.netSalary),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: cs.primary,
-                    ),
-                  )),
-                  DataCell(_statusCell(row, cs)),
-                ],
-              );
-            }),
-          ),
-        ),
+                  ),
+                ),
+                const Divider(height: 1),
+              ],
+            );
+          }),
+        ],
       ),
     );
   }

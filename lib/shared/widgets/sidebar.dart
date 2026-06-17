@@ -6,11 +6,6 @@ import '../theme/theme_provider.dart';
 
 // ── Navigation model ─────────────────────────────────────────────────────────
 
-/// Flat string-based route IDs:
-///   'dashboard', 'settings', 'backup'
-///   '{category}.{section}'  → e.g. 'pedo.list', 'security.payroll'
-/// Categories: pedo | security | alfajar
-/// Sections:   list | add | payroll | reports
 class NavRoute {
   const NavRoute._();
 
@@ -32,8 +27,7 @@ class NavRoute {
 class _Cat {
   final String id, label;
   final IconData icon;
-  final Color color;
-  const _Cat(this.id, this.label, this.icon, this.color);
+  const _Cat(this.id, this.label, this.icon);
 }
 
 class _Sub {
@@ -41,6 +35,16 @@ class _Sub {
   final IconData icon;
   const _Sub(this.label, this.icon, this.section);
 }
+
+// ── Sidebar colours (always dark navy regardless of app theme) ────────────────
+
+const _kNavBg = Color(0xFF1B2235);
+const _kActiveBg = Color(0xFF253050);
+const _kActiveAccent = Color(0xFF4A9EFF);
+const _kTextActive = Colors.white;
+const _kTextInactive = Color(0xFFB0B8CC);
+const _kDivider = Color(0x1AFFFFFF);
+const _kSectionLabel = Color(0xFF8899BB);
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -66,13 +70,13 @@ class _SidebarState extends State<Sidebar> {
   };
 
   static const _cats = [
-    _Cat('pedo', 'PEDO Employees', Icons.account_balance_outlined, Color(0xFF1565C0)),
-    _Cat('security', 'Security Guards', Icons.shield_outlined, Color(0xFF2E7D32)),
-    _Cat('alfajar', 'Al Fajar', Icons.star_outline, Color(0xFF6A1B9A)),
+    _Cat('pedo', 'Employees', Icons.people_outline),
+    _Cat('security', 'Security Guards', Icons.shield_outlined),
+    _Cat('alfajar', 'Al Fajar', Icons.star_outline),
   ];
 
   static const _subs = [
-    _Sub('Employee List', Icons.people_outline, 'list'),
+    _Sub('Employee List', Icons.list_outlined, 'list'),
     _Sub('Add Employee', Icons.person_add_outlined, 'add'),
     _Sub('Payroll', Icons.payments_outlined, 'payroll'),
     _Sub('Print & Reports', Icons.print_outlined, 'reports'),
@@ -104,51 +108,50 @@ class _SidebarState extends State<Sidebar> {
 
   // ── Builders ──────────────────────────────────────────────────────────────
 
-  Widget _logo(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+  Widget _logo() {
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: cs.primary,
-              borderRadius: BorderRadius.circular(8),
+              color: const Color(0xFF2563EB),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 19),
+            child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 10),
-          Text(
-            'PayVault',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: cs.primary,
-              fontWeight: FontWeight.w800,
-              fontSize: 17,
-            ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text(
+                'PayVault',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 0.2),
+              ),
+              SizedBox(height: 1),
+              Text(
+                'Payroll Management',
+                style: TextStyle(color: _kSectionLabel, fontSize: 10, fontWeight: FontWeight.w400),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _navItem(
-    BuildContext context, {
+  Widget _navItem({
     required IconData icon,
     required String label,
     required bool isActive,
     required VoidCallback onTap,
     double leftPad = 14,
-    double iconSize = 19,
-    TextStyle? labelStyle,
-    Color? activeColor,
+    double iconSize = 18,
   }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final effectiveActive = activeColor ?? cs.primary;
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -157,28 +160,18 @@ class _SidebarState extends State<Sidebar> {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
         padding: EdgeInsets.only(left: leftPad, right: 8, top: 9, bottom: 9),
         decoration: BoxDecoration(
-          color: isActive
-              ? effectiveActive.withValues(alpha: isDark ? 0.18 : 0.1)
-              : Colors.transparent,
+          color: isActive ? _kActiveBg : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: iconSize,
-              color: isActive
-                  ? effectiveActive
-                  : Theme.of(context).iconTheme.color,
-            ),
+            Icon(icon, size: iconSize, color: isActive ? _kActiveAccent : _kTextInactive),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
-                style: (labelStyle ?? Theme.of(context).textTheme.bodyMedium)?.copyWith(
-                  color: isActive
-                      ? effectiveActive
-                      : Theme.of(context).textTheme.bodyMedium?.color,
+                style: TextStyle(
+                  color: isActive ? _kTextActive : _kTextInactive,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   fontSize: 13,
                 ),
@@ -191,13 +184,12 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  Widget _categorySection(BuildContext context, _Cat cat) {
+  Widget _categorySection(_Cat cat) {
     final isExpanded = _expanded[cat.id] ?? false;
     final isCatActive = _isCatActive(cat.id);
 
     return Column(
       children: [
-        // Category header
         InkWell(
           onTap: () => setState(() => _expanded[cat.id] = !isExpanded),
           borderRadius: BorderRadius.circular(8),
@@ -206,27 +198,19 @@ class _SidebarState extends State<Sidebar> {
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
             padding: const EdgeInsets.only(left: 14, right: 8, top: 9, bottom: 9),
             decoration: BoxDecoration(
-              color: isCatActive && !isExpanded
-                  ? cat.color.withValues(alpha: 0.1)
-                  : Colors.transparent,
+              color: isCatActive && !isExpanded ? _kActiveBg : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                Icon(
-                  cat.icon,
-                  size: 19,
-                  color: isCatActive ? cat.color : Theme.of(context).iconTheme.color,
-                ),
+                Icon(cat.icon, size: 18, color: isCatActive ? _kActiveAccent : _kTextInactive),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     cat.label,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isCatActive
-                          ? cat.color
-                          : Theme.of(context).textTheme.bodyMedium?.color,
-                      fontWeight: isCatActive ? FontWeight.w600 : FontWeight.w500,
+                    style: TextStyle(
+                      color: isCatActive ? _kTextActive : _kTextInactive,
+                      fontWeight: isCatActive ? FontWeight.w600 : FontWeight.w400,
                       fontSize: 13,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -235,17 +219,12 @@ class _SidebarState extends State<Sidebar> {
                 AnimatedRotation(
                   duration: const Duration(milliseconds: 200),
                   turns: isExpanded ? 0.25 : 0,
-                  child: Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: Theme.of(context).iconTheme.color?.withValues(alpha: 0.6),
-                  ),
+                  child: const Icon(Icons.chevron_right, size: 16, color: _kSectionLabel),
                 ),
               ],
             ),
           ),
         ),
-        // Sub-items with animated expand
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
@@ -254,14 +233,12 @@ class _SidebarState extends State<Sidebar> {
                   children: _subs.map((sub) {
                     final routeId = NavRoute.cat(cat.id, sub.section);
                     return _navItem(
-                      context,
                       icon: sub.icon,
                       label: sub.label,
                       isActive: _isActive(routeId),
                       onTap: () => widget.onRouteChanged(routeId),
                       leftPad: 34,
-                      iconSize: 16,
-                      activeColor: cat.color,
+                      iconSize: 15,
                     );
                   }).toList(),
                 )
@@ -271,7 +248,7 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  Widget _bottomControls(BuildContext context) {
+  Widget _bottomControls() {
     final themeProvider = context.watch<ThemeProvider>();
     final auth = context.read<AuthProvider>();
     final isDark = themeProvider.isDark;
@@ -281,7 +258,7 @@ class _SidebarState extends State<Sidebar> {
       child: Row(
         children: [
           Expanded(
-            child: _ActionButton(
+            child: _SidebarButton(
               icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
               label: isDark ? 'Light' : 'Dark',
               onTap: themeProvider.toggle,
@@ -289,9 +266,9 @@ class _SidebarState extends State<Sidebar> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: _ActionButton(
+            child: _SidebarButton(
               icon: Icons.logout_outlined,
-              label: 'Sign Out',
+              label: 'Logout',
               onTap: auth.logout,
               isDestructive: true,
             ),
@@ -303,61 +280,43 @@ class _SidebarState extends State<Sidebar> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sidebarBg = isDark ? const Color(0xFF252537) : Colors.white;
-
     return SizedBox(
       width: 220,
       child: Material(
-        color: sidebarBg,
+        color: _kNavBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _logo(context),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Theme.of(context).dividerTheme.color,
-            ),
+            _logo(),
+            const Divider(height: 1, thickness: 1, color: _kDivider),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
                   _navItem(
-                    context,
                     icon: Icons.dashboard_outlined,
                     label: 'Dashboard',
                     isActive: _isActive(NavRoute.dashboard),
                     onTap: () => widget.onRouteChanged(NavRoute.dashboard),
                   ),
                   const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     child: Text(
                       'CATEGORIES',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: TextStyle(color: _kSectionLabel, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.2),
                     ),
                   ),
-                  ..._cats.map((cat) => _categorySection(context, cat)),
+                  ..._cats.map((cat) => _categorySection(cat)),
                   const SizedBox(height: 4),
-                  Divider(
-                    indent: 16,
-                    endIndent: 16,
-                    height: 16,
-                    color: Theme.of(context).dividerTheme.color,
-                  ),
+                  const Divider(indent: 16, endIndent: 16, height: 16, color: _kDivider),
                   _navItem(
-                    context,
                     icon: Icons.settings_outlined,
                     label: 'Settings',
                     isActive: _isActive(NavRoute.settings),
                     onTap: () => widget.onRouteChanged(NavRoute.settings),
                   ),
                   _navItem(
-                    context,
                     icon: Icons.cloud_upload_outlined,
                     label: 'Backup',
                     isActive: _isActive(NavRoute.backup),
@@ -366,12 +325,8 @@ class _SidebarState extends State<Sidebar> {
                 ],
               ),
             ),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Theme.of(context).dividerTheme.color,
-            ),
-            _bottomControls(context),
+            const Divider(height: 1, thickness: 1, color: _kDivider),
+            _bottomControls(),
           ],
         ),
       ),
@@ -379,15 +334,15 @@ class _SidebarState extends State<Sidebar> {
   }
 }
 
-// ── Bottom action button ───────────────────────────────────────────────────
+// ── Sidebar bottom button ─────────────────────────────────────────────────────
 
-class _ActionButton extends StatelessWidget {
+class _SidebarButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool isDestructive;
 
-  const _ActionButton({
+  const _SidebarButton({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -396,9 +351,7 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive
-        ? const Color(0xFFE53E3E)
-        : Theme.of(context).iconTheme.color;
+    final color = isDestructive ? const Color(0xFFFC8181) : _kTextInactive;
 
     return InkWell(
       onTap: onTap,
@@ -407,17 +360,14 @@ class _ActionButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          color: (color ?? Colors.grey).withValues(alpha: 0.06),
+          color: const Color(0xFF253050),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: color),
+            Icon(icon, size: 16, color: color),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500),
-            ),
+            Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
