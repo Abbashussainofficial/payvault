@@ -101,12 +101,21 @@ class PrintService {
     required int year,
     String vNo = '',
   }) {
-    final comps = PayrollComponent.parseSnapshot(record.salarySnapshot);
-    final allowances = comps.where((c) => c.type == 'allowance').toList();
-    final deductions = comps.where((c) => c.type == 'deduction').toList();
-    final monthUpper = _monthNames[month - 1].toUpperCase();
-    final dateStr = DateFormat('dd-MM-yyyy')
-        .format(DateTime.tryParse(record.processedAt) ?? DateTime.now());
+    final comps           = PayrollComponent.parseSnapshot(record.salarySnapshot);
+    final regularAllow    = comps.where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null)).toList();
+    final otherAllow      = comps.where((c) => c.type == 'allowance' && c.section == 'other').toList();
+    final deductions      = comps.where((c) => c.type == 'deduction').toList();
+    final totRegular      = regularAllow.fold(0.0, (s, c) => s + c.amount);
+    final totOther        = otherAllow.fold(0.0, (s, c) => s + c.amount);
+    final period          = '${_monthNames[month - 1]}-$year';
+    final gross           = record.baseSalary + totRegular + totOther;
+    final net             = record.netSalary;
+    final bpsStr     = employee.bpsGrade != null ? 'BPS-${employee.bpsGrade}' : '';
+    final dateStr    = record.processedAt.isEmpty
+        ? '_________'
+        : DateFormat('dd-MM-yyyy')
+            .format(DateTime.tryParse(record.processedAt) ?? DateTime.now());
+    final vNoStr = vNo.isEmpty ? '_________' : vNo;
 
     return pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -114,65 +123,93 @@ class PrintService {
       build: (ctx) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          // V.No & date (top right)
+          // V. No / Date — top right
           pw.Align(
             alignment: pw.Alignment.topRight,
             child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text('V.No: $vNo',
-                    style: const pw.TextStyle(fontSize: 8.5)),
-                pw.Text('Date: $dateStr',
-                    style: const pw.TextStyle(fontSize: 8.5)),
+                pw.Text('V. No. $vNoStr', style: const pw.TextStyle(fontSize: 8.5)),
+                pw.Text('Date   $dateStr', style: const pw.TextStyle(fontSize: 8.5)),
               ],
             ),
           ),
-          pw.SizedBox(height: 6),
+          pw.SizedBox(height: 4),
 
-          // Title
-          pw.Center(
-            child: pw.Text(
-              'PAY BILL OF GOVERNMENT OFFICER, GOVERNMENT OF K. P. K',
-              style: pw.TextStyle(
-                  fontSize: 11, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
-            ),
+          // Title — two centered bold lines
+          pw.Text(
+            'PAY BILL OF GOVERNMENT OFFICER,',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.Text(
+            'GOVERNMENT OF K. P. K',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+            textAlign: pw.TextAlign.center,
           ),
           pw.SizedBox(height: 4),
-          pw.Center(
-            child: pw.Text(
-              'Note: The pay bill should be forwarded to the D.D.O who will fill in the '
-              'amount payable after checking and sign it.',
-              style: pw.TextStyle(
-                  fontSize: 7.5,
-                  fontStyle: pw.FontStyle.italic,
-                  color: PdfColors.grey700),
-              textAlign: pw.TextAlign.center,
+
+          // Disclaimer
+          pw.Text(
+            'Note:-Government accepts no responsibility for any fraud, miss-appropriation in '
+            'respect of money or cheque bill made over to a messenger.',
+            style: const pw.TextStyle(fontSize: 8),
+          ),
+          pw.SizedBox(height: 4),
+
+          // Name line — name/designation/dept underlined
+          pw.RichText(
+            text: pw.TextSpan(
+              style: const pw.TextStyle(fontSize: 9),
+              children: [
+                const pw.TextSpan(text: 'Name of Government Officer  '),
+                pw.TextSpan(
+                  text: '${employee.fullName}  ${employee.designation}  ${employee.department}',
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                    decoration: pw.TextDecoration.underline,
+                  ),
+                ),
+              ],
             ),
           ),
-          pw.SizedBox(height: 10),
+          pw.SizedBox(height: 2),
 
-          // Employee info block
-          _pedoInfoRow(
-            'Name of Government Officer:',
-            '${employee.fullName}    ${employee.designation}    ${employee.department}',
+          // BPS / scale — centered
+          if (bpsStr.isNotEmpty)
+            pw.Text(
+              '($bpsStr)  (${_fmt(employee.baseSalary)})',
+              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+              textAlign: pw.TextAlign.center,
+            ),
+          pw.SizedBox(height: 2),
+
+          pw.Text(
+            'B/Head: Revenue/Profit of PEDO, Service Charged Levied on Expenditure incurred on',
+            style: const pw.TextStyle(fontSize: 9),
           ),
-          _pedoInfoRow(
-            'BPS: ${employee.bpsGrade ?? '-'}',
-            '    Contact: ${employee.contactNumber ?? '-'}',
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(left: 48),
+            child: pw.Text('Dev: Scheme of PEDO.', style: const pw.TextStyle(fontSize: 9)),
           ),
-          _pedoInfoRow('B/Head:', 'Revenue/Profit of PEDO'),
-          pw.Text('Detailed Function.',
-              style: const pw.TextStyle(fontSize: 9)),
-          pw.SizedBox(height: 12),
+          pw.Text(
+            'Detailed Function.',
+            style: const pw.TextStyle(fontSize: 9),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 10),
 
           // Main table
           _buildPedoTable(
             record: record,
-            allowances: allowances,
+            regularAllowances: regularAllow,
+            otherAllowances: otherAllow,
+            totRegular: totRegular,
             deductions: deductions,
-            monthUpper: monthUpper,
-            year: year,
+            period: period,
+            gross: gross,
+            net: net,
           ),
           pw.SizedBox(height: 28),
 
@@ -182,11 +219,13 @@ class PrintService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text('________________________',
-                    style: const pw.TextStyle(fontSize: 9)),
-                pw.SizedBox(height: 2),
-                pw.Text('Signature of Officer',
-                    style: const pw.TextStyle(fontSize: 9)),
+                pw.Container(
+                  width: 140,
+                  height: 0.8,
+                  decoration: const pw.BoxDecoration(color: PdfColors.black),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text('Signature of Officer', style: const pw.TextStyle(fontSize: 9)),
               ],
             ),
           ),
@@ -195,100 +234,188 @@ class PrintService {
     );
   }
 
-  static pw.Widget _pedoInfoRow(String label, String value) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 2),
-        child: pw.Row(children: [
-          pw.Text('$label ',
-              style:
-                  pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-          pw.Text(value, style: const pw.TextStyle(fontSize: 9)),
-        ]),
-      );
-
   static pw.Widget _buildPedoTable({
     required PayrollRecord record,
-    required List<PayrollComponent> allowances,
+    required List<PayrollComponent> regularAllowances,
+    required List<PayrollComponent> otherAllowances,
+    required double totRegular,
     required List<PayrollComponent> deductions,
-    required String monthUpper,
-    required int year,
+    required String period,
+    required double gross,
+    required double net,
   }) {
     const colWidths = {
-      0: pw.FlexColumnWidth(3.5),
-      1: pw.FixedColumnWidth(90.0),
-      2: pw.FixedColumnWidth(68.0),
-      3: pw.FixedColumnWidth(78.0),
+      0: pw.FlexColumnWidth(3.8),
+      1: pw.FixedColumnWidth(86.0),
+      2: pw.FixedColumnWidth(70.0),
+      3: pw.FixedColumnWidth(70.0),
     };
+
+    // Outer border only — selective inner borders via row decoration
     const border = pw.TableBorder(
-      top: pw.BorderSide(color: PdfColors.grey600, width: 0.5),
-      bottom: pw.BorderSide(color: PdfColors.grey600, width: 0.5),
-      left: pw.BorderSide(color: PdfColors.grey600, width: 0.5),
-      right: pw.BorderSide(color: PdfColors.grey600, width: 0.5),
-      horizontalInside: pw.BorderSide(color: PdfColors.grey400, width: 0.4),
-      verticalInside: pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+      top:              pw.BorderSide(color: PdfColors.black, width: 0.6),
+      bottom:           pw.BorderSide(color: PdfColors.black, width: 0.6),
+      left:             pw.BorderSide(color: PdfColors.black, width: 0.6),
+      right:            pw.BorderSide(color: PdfColors.black, width: 0.6),
+      horizontalInside: pw.BorderSide.none,
+      verticalInside:   pw.BorderSide(color: PdfColors.black, width: 0.5),
     );
 
-    pw.TableRow head(List<String> cells) => pw.TableRow(
-          decoration:
-              const pw.BoxDecoration(color: PdfColors.grey300),
-          children: cells
-              .map((c) => _pCell(c,
-                  bold: true, fontSize: 8.5, vPad: 3))
-              .toList(),
-        );
+    // Bottom-border decoration for rows that need it
+    const rowBorderDeco = pw.BoxDecoration(
+      border: pw.Border(
+        bottom: pw.BorderSide(color: PdfColors.black, width: 0.4),
+      ),
+    );
 
-    pw.TableRow data(String desc, String code, String rate, String amt,
-            {bool bold = false}) =>
-        pw.TableRow(children: [
-          _pCell(desc, bold: bold),
-          _pCell(code, align: pw.TextAlign.center),
-          _pCell(rate, align: pw.TextAlign.right),
-          _pCell(amt, bold: bold, align: pw.TextAlign.right),
-        ]);
+    String amtOrDash(double v) => v <= 0 ? '-' : _fmt(v);
 
-    pw.TableRow section(String label, {bool underline = false}) =>
+    // Standard 4-column data row
+    pw.TableRow dr(
+      String desc,
+      String code,
+      String rate,
+      String amt, {
+      bool bold = false,
+      bool hasBorder = false,
+      bool indent = false,
+      bool centerDesc = false,
+    }) =>
         pw.TableRow(
-          decoration:
-              const pw.BoxDecoration(color: PdfColors.grey100),
+          decoration: hasBorder ? rowBorderDeco : null,
           children: [
-            _pCell(
-              label,
-              bold: true,
-              underline: underline,
-            ),
-            pw.Container(),
-            pw.Container(),
-            pw.Container(),
+            _pCell(desc, bold: bold, indent: indent,
+                align: centerDesc ? pw.TextAlign.center : pw.TextAlign.left),
+            _pCell(code, align: pw.TextAlign.center),
+            _pCell(rate, align: pw.TextAlign.right, bold: bold),
+            _pCell(amt,  align: pw.TextAlign.right, bold: bold),
           ],
         );
+
+    // Section header row — bold+underline label, empty other cells, no border
+    pw.TableRow sr(String label, {bool underline = false}) => pw.TableRow(
+      children: [
+        _pCell(label, bold: true, underline: underline),
+        _pCell('', align: pw.TextAlign.center),
+        _pCell(''),
+        _pCell(''),
+      ],
+    );
+
+    // Label + code row (e.g. "Regular Allowance-" with code 02200)
+    pw.TableRow lr(String label, String code, {bool underline = false}) => pw.TableRow(
+      children: [
+        _pCell(label, bold: true, underline: underline),
+        _pCell(code, align: pw.TextAlign.center),
+        _pCell(''),
+        _pCell(''),
+      ],
+    );
 
     return pw.Table(
       border: border,
       columnWidths: colWidths,
       children: [
-        head(['Description', 'Classification Code', 'Monthly Rate', 'Amount']),
-        data('Pay for the Month of $monthUpper $year', '00000', 'Rs.', ''),
-        data('Pay', '011000', '', _fmt(record.baseSalary)),
-        data('Personal Pay', '01100', '', ''),
-        data('Total Basic Salary', '', '', _fmt(record.baseSalary),
-            bold: true),
-        section('Regular Allowance:', underline: true),
-        ...allowances.map(
-          (c) => data(c.name, c.code ?? '', '', _fmt(c.amount)),
+        // Header — border below (thick)
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(
+            border: pw.Border(
+              bottom: pw.BorderSide(color: PdfColors.black, width: 0.6),
+            ),
+          ),
+          children: [
+            _pCell('', bold: true, vPad: 3),
+            _pCell('Classification\nCode', bold: true, align: pw.TextAlign.center, vPad: 3),
+            _pCell('Monthly Rate',         bold: true, align: pw.TextAlign.center, vPad: 3),
+            _pCell('Amount',               bold: true, align: pw.TextAlign.center, vPad: 3),
+          ],
         ),
-        data('Total Regular Allowances', '02000, 03000, 00000', '',
-            _fmt(record.totalAllowances),
-            bold: true),
-        section('Other Allowance:'),
-        section('Less - Fund deduction', underline: true),
-        ...deductions.map(
-          (c) => data(c.name, c.code ?? '', '', _fmt(c.amount)),
+
+        // Pay period rows — no borders
+        dr('Pay for the Month of $period', '00000', 'Rs.', ''),
+        dr('', '011000', _fmt(record.baseSalary), _fmt(record.baseSalary)),
+
+        // "Pay....." + "Total Basic Salary" two-liner — border below
+        pw.TableRow(
+          decoration: rowBorderDeco,
+          children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('Pay ..........................................',
+                      style: const pw.TextStyle(fontSize: 8.5)),
+                  pw.Text('Total Basic  Salary',
+                      style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ),
+            _pCell('01100', align: pw.TextAlign.center),
+            _pCell(_fmt(record.baseSalary), align: pw.TextAlign.right, bold: true),
+            _pCell(_fmt(record.baseSalary), align: pw.TextAlign.right, bold: true),
+          ],
         ),
-        data('Total Deduction:', '', '', _fmt(record.totalDeductions),
-            bold: true),
-        data('Net Claim', '', '', _fmt(record.netSalary), bold: true),
-        data('Total Net Amount Payable', '', '', _fmt(record.netSalary),
-            bold: true),
+
+        // Blank row with code 02000 — no border
+        dr('', '02000', '', ''),
+
+        // "Regular Allowance-" with code 02200 — no border
+        lr('Regular Allowance-', '02200', underline: true),
+
+        // Dynamic regular allowances — no borders
+        ...regularAllowances.map((c) => dr(c.name, c.code ?? '', _fmt(c.amount), _fmt(c.amount))),
+
+        // Total Regular Allowances — border below
+        dr('Total Regular Allowances', '02000',
+            _fmt(totRegular), _fmt(totRegular),
+            bold: true, hasBorder: true),
+
+        // Budget code rows — border below each
+        dr('', '03000', '', '', hasBorder: true),
+        dr('', '00000', _fmt(gross), _fmt(gross), bold: true, hasBorder: true),
+
+        // Other Allowance — no border
+        sr('Other Allowance', underline: true),
+
+        // Dynamic other allowances (indented) — border on last; placeholder if empty
+        ...List.generate(
+          otherAllowances.isNotEmpty ? otherAllowances.length : 1,
+          (i) {
+            if (otherAllowances.isEmpty) {
+              return dr('', '', '', '', indent: true, hasBorder: true);
+            }
+            final c = otherAllowances[i];
+            return dr(c.name, c.code ?? '', _fmt(c.amount), _fmt(c.amount),
+                indent: true, hasBorder: i == otherAllowances.length - 1);
+          },
+        ),
+
+        // Less-Fund deduction — no border
+        sr('Less -Fund deduction', underline: true),
+
+        // Dynamic deductions (indented) — border only on last
+        ...List.generate(deductions.length, (i) => dr(
+          deductions[i].name,
+          deductions[i].code ?? '',
+          amtOrDash(deductions[i].amount),
+          amtOrDash(deductions[i].amount),
+          indent: true,
+          hasBorder: i == deductions.length - 1,
+        )),
+
+        // Summary rows — border below each
+        dr('Total Deduction:................................', '',
+            _fmt(record.totalDeductions), _fmt(record.totalDeductions),
+            bold: true, hasBorder: true),
+        dr('Net Claim......................................', '',
+            _fmt(net), _fmt(net),
+            bold: true, hasBorder: true),
+
+        // Total Net Amount Payable — no inner border (outer table bottom is the line)
+        dr('Total Net Amount Payable.......................',  '',
+            _fmt(net), _fmt(net),
+            bold: true, centerDesc: true),
       ],
     );
   }
@@ -503,9 +630,10 @@ class PrintService {
     double fontSize = 8.5,
     pw.TextAlign align = pw.TextAlign.left,
     double vPad = 2,
+    bool indent = false,
   }) =>
       pw.Padding(
-        padding: pw.EdgeInsets.symmetric(horizontal: 4, vertical: vPad),
+        padding: pw.EdgeInsets.fromLTRB(indent ? 14 : 4, vPad, 4, vPad),
         child: pw.Text(
           text,
           textAlign: align,

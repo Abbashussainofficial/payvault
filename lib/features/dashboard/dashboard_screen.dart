@@ -5,14 +5,33 @@ import 'package:intl/intl.dart';
 import '../../core/database/database.dart';
 import '../../shared/widgets/sidebar.dart';
 
+// ── Activity item ─────────────────────────────────────────────────────────────
+
+class _ActivityItem {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String description;
+  final String meta;
+
+  const _ActivityItem({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.description,
+    required this.meta,
+  });
+}
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 class _DashboardData {
   final int pedoCount, securityCount, alfajarCount;
   final double pedoPayroll, securityPayroll, alfajarPayroll;
-  final List<Employee> recentEmployees;
-  final List<double> chartTotals;   // 6 values oldest→newest
-  final List<String> chartLabels;   // 'Jan','Feb',…
+  final double pedoPrevPayroll, securityPrevPayroll, alfajarPrevPayroll;
+  final List<_ActivityItem> activities;
   final int pendingApprovals;
 
   const _DashboardData({
@@ -22,9 +41,10 @@ class _DashboardData {
     required this.pedoPayroll,
     required this.securityPayroll,
     required this.alfajarPayroll,
-    required this.recentEmployees,
-    required this.chartTotals,
-    required this.chartLabels,
+    required this.pedoPrevPayroll,
+    required this.securityPrevPayroll,
+    required this.alfajarPrevPayroll,
+    required this.activities,
     required this.pendingApprovals,
   });
 
@@ -48,9 +68,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _error;
   final _db = AppDatabase.instance;
 
-  static const _monthNames = [
-    'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'
-  ];
+  static const _catLabels = {
+    'pedo': 'PEDO',
+    'security': 'Security Guards',
+    'alfajar': 'Al Fajar',
+  };
 
   @override
   void initState() {
@@ -58,11 +80,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _load();
   }
 
+  String _relTime(String? iso) {
+    if (iso == null) return 'Recently • By Admin';
+    try {
+      final dt = DateTime.parse(iso);
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) return '${diff.inMinutes} min ago • By Admin';
+      if (diff.inHours < 24) return '${diff.inHours} hours ago • By Admin';
+      if (diff.inDays == 1) return 'Yesterday • By Admin';
+      return '${DateFormat('MMM d, yyyy').format(dt)} • By Admin';
+    } catch (_) {
+      return 'Recently • By Admin';
+    }
+  }
+
   Future<void> _load() async {
     try {
       final now = DateTime.now();
       final all = await _db.employeesDao.getActiveEmployees();
-      final currentPayroll = await _db.payrollRecordsDao.getRecordsByMonthYear(now.month, now.year);
+      final currentPayroll =
+          await _db.payrollRecordsDao.getRecordsByMonthYear(now.month, now.year);
 
       final empMap = {for (final e in all) e.id: e};
       int pedoC = 0, secC = 0, alfC = 0;
@@ -70,38 +107,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       for (final e in all) {
         switch (e.category) {
-          case 'pedo': pedoC++;
-          case 'security': secC++;
-          case 'alfajar': alfC++;
+          case 'pedo':
+            pedoC++;
+          case 'security':
+            secC++;
+          case 'alfajar':
+            alfC++;
         }
       }
       for (final r in currentPayroll) {
         final emp = empMap[r.employeeId];
         if (emp == null) continue;
         switch (emp.category) {
-          case 'pedo': pedoP += r.netSalary;
-          case 'security': secP += r.netSalary;
-          case 'alfajar': alfP += r.netSalary;
+          case 'pedo':
+            pedoP += r.netSalary;
+          case 'security':
+            secP += r.netSalary;
+          case 'alfajar':
+            alfP += r.netSalary;
         }
       }
 
-      // 6-month chart data
-      final chartTotals = <double>[];
-      final chartLabels = <String>[];
-      for (int i = 5; i >= 0; i--) {
-        final dt = DateTime(now.year, now.month - i, 1);
-        final records = i == 0
-            ? currentPayroll
-            : await _db.payrollRecordsDao.getRecordsByMonthYear(dt.month, dt.year);
-        chartTotals.add(records.fold(0.0, (s, r) => s + r.netSalary));
-        chartLabels.add(_monthNames[dt.month - 1]);
+      // Previous month payroll by category
+      final prevDt = DateTime(now.year, now.month - 1, 1);
+      final prevPayroll = await _db.payrollRecordsDao
+          .getRecordsByMonthYear(prevDt.month, prevDt.year);
+      double pedoPrev = 0, secPrev = 0, alfPrev = 0;
+      for (final r in prevPayroll) {
+        final emp = empMap[r.employeeId];
+        if (emp == null) continue;
+        switch (emp.category) {
+          case 'pedo':
+            pedoPrev += r.netSalary;
+          case 'security':
+            secPrev += r.netSalary;
+          case 'alfajar':
+            alfPrev += r.netSalary;
+        }
       }
 
-      // Pending approvals = active employees with no payroll this month
+      // Build activity list
+      final activities = <_ActivityItem>[];
+
+      // Payroll processed – one per category, most recent processedAt
+      final payrollTs = <String, String>{};
+      for (final r in currentPayroll) {
+        final cat = empMap[r.employeeId]?.category;
+        if (cat != null) payrollTs[cat] ??= r.processedAt;
+      }
+      const payrollColors = {
+        'pedo': Color(0xFF27AE60),
+        'security': Color(0xFF0D7377),
+        'alfajar': Color(0xFF2E7D32),
+      };
+      for (final cat in ['pedo', 'security', 'alfajar']) {
+        if (payrollTs.containsKey(cat)) {
+          activities.add(_ActivityItem(
+            icon: Icons.check_circle_outline,
+            iconBg: const Color(0xFFE8F5E9),
+            iconColor: payrollColors[cat] ?? const Color(0xFF27AE60),
+            title: 'Payroll Processed: ${_catLabels[cat]}',
+            description:
+                'Monthly batch for ${DateFormat('MMM yyyy').format(now)} finalized.',
+            meta: _relTime(payrollTs[cat]),
+          ));
+        }
+      }
+
+      // Recent employees added
+      const empColors = {
+        'pedo': Color(0xFF1565C0),
+        'security': Color(0xFF0D7377),
+        'alfajar': Color(0xFF2E7D32),
+      };
+      final sorted = [...all]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      for (final e in sorted.take(3)) {
+        final c = empColors[e.category] ?? const Color(0xFF1565C0);
+        activities.add(_ActivityItem(
+          icon: Icons.person_add_outlined,
+          iconBg: c.withValues(alpha: 0.1),
+          iconColor: c,
+          title: 'New Employee Added',
+          description: '${e.fullName} joined ${_catLabels[e.category] ?? e.category}.',
+          meta: _relTime(e.createdAt),
+        ));
+      }
+
+      // Static backup entry
+      activities.add(const _ActivityItem(
+        icon: Icons.cloud_done_outlined,
+        iconBg: Color(0xFFE3F2FD),
+        iconColor: Color(0xFF1565C0),
+        title: 'Backup Completed',
+        description: 'Local backup successful. Data secured.',
+        meta: 'Today • System Auto',
+      ));
+
+      // Pending approvals
       final processedIds = currentPayroll.map((r) => r.employeeId).toSet();
       final pending = all.where((e) => !processedIds.contains(e.id)).length;
-
-      final sorted = [...all]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (mounted) {
         setState(() {
@@ -112,9 +216,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             pedoPayroll: pedoP,
             securityPayroll: secP,
             alfajarPayroll: alfP,
-            recentEmployees: sorted.take(5).toList(),
-            chartTotals: chartTotals,
-            chartLabels: chartLabels,
+            pedoPrevPayroll: pedoPrev,
+            securityPrevPayroll: secPrev,
+            alfajarPrevPayroll: alfPrev,
+            activities: activities.take(5).toList(),
             pendingApprovals: pending,
           );
           _loading = false;
@@ -127,23 +232,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final monthLabel = DateFormat('MMMM yyyy').format(now);
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => widget.onNavigate?.call(NavRoute.cat('pedo', 'payroll')),
+        backgroundColor: const Color(0xFF1B2235),
+        foregroundColor: Colors.white,
+        elevation: 2,
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text(
+          'Run New Payroll',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _ErrorState(
                   error: _error!,
-                  onRetry: () { setState(() { _loading = true; _error = null; }); _load(); },
+                  onRetry: () {
+                    setState(() { _loading = true; _error = null; });
+                    _load();
+                  },
                 )
-              : _Body(
-                  data: _data!,
-                  monthLabel: monthLabel,
-                  onNavigate: widget.onNavigate,
-                ),
+              : _Body(data: _data!, onNavigate: widget.onNavigate),
     );
   }
 }
@@ -152,33 +264,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class _Body extends StatelessWidget {
   final _DashboardData data;
-  final String monthLabel;
   final ValueChanged<String>? onNavigate;
 
-  const _Body({required this.data, required this.monthLabel, this.onNavigate});
+  const _Body({required this.data, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 88),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Header(monthLabel: monthLabel),
+          const _Header(),
           const SizedBox(height: 24),
           _CategoryCards(data: data, onNavigate: onNavigate),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(flex: 3, child: _ExpenditureChart(data: data)),
+                Expanded(flex: 3, child: _ComparisonChart(data: data)),
                 const SizedBox(width: 16),
-                Expanded(flex: 2, child: _RecentActivity(employees: data.recentEmployees)),
+                Expanded(flex: 2, child: _RecentActivity(activities: data.activities)),
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _BottomStats(data: data),
         ],
       ),
@@ -189,46 +300,108 @@ class _Body extends StatelessWidget {
 // ── Header ────────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
-  final String monthLabel;
-  const _Header({required this.monthLabel});
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final now = DateTime.now();
+    final dateStr = DateFormat('MMM d, yyyy').format(now);
+    final timeStr = DateFormat('HH:mm').format(now);
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Payroll Overview', style: tt.headlineLarge?.copyWith(fontWeight: FontWeight.w700)),
+            Text(
+              'Dashboard Overview',
+              style: tt.headlineLarge?.copyWith(fontWeight: FontWeight.w700, fontSize: 24),
+            ),
             const SizedBox(height: 4),
             Text(
-              'Manage and monitor payroll across all departments.',
-              style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.55)),
+              'Centralized salary monitoring and auditing.',
+              style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
             ),
           ],
         ),
         const Spacer(),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'CURRENT PERIOD',
-              style: tt.labelSmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.45),
-                letterSpacing: 1.0,
-                fontWeight: FontWeight.w600,
+        // Date chip
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.15)),
+            borderRadius: BorderRadius.circular(20),
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.transparent,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.calendar_today_outlined, size: 13, color: cs.onSurface.withValues(alpha: 0.55)),
+              const SizedBox(width: 6),
+              Text(dateStr, style: tt.labelSmall?.copyWith(fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Clock icon box
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.15)),
+            borderRadius: BorderRadius.circular(8),
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.transparent,
+          ),
+          child: Icon(Icons.access_time_outlined, size: 16, color: cs.onSurface.withValues(alpha: 0.55)),
+        ),
+        const SizedBox(width: 12),
+        // System Stable badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF27AE60).withValues(alpha: isDark ? 0.15 : 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF27AE60).withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'System Stable',
+                style: tt.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? const Color(0xFF4CAF50) : const Color(0xFF276749),
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              monthLabel,
-              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cs.primary),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF27AE60),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Live Sync Active • $timeStr',
+                    style: tt.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: isDark ? const Color(0xFF66BB6A) : const Color(0xFF2F855A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -245,48 +418,44 @@ class _CategoryCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fmt = NumberFormat('#,##0', 'en_US');
-    final fmtPay = NumberFormat('#,##0', 'en_US');
 
     return Row(
       children: [
         Expanded(
           child: _CatCard(
-            badge: 'PUBLIC SECTOR',
-            badgeColor: const Color(0xFF1565C0),
-            title: 'PEDO',
-            icon: Icons.account_balance_outlined,
+            title: 'PEDO Employees',
+            ghostIcon: Icons.assignment_outlined,
             employeeCount: data.pedoCount,
             payroll: data.pedoPayroll,
+            trendIcon: Icons.trending_up,
+            accentColor: const Color(0xFF1565C0),
             fmt: fmt,
-            fmtPay: fmtPay,
             onTap: () => onNavigate?.call(NavRoute.cat('pedo', 'list')),
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: _CatCard(
-            badge: 'EXTERNAL AGENCY',
-            badgeColor: const Color(0xFF0D7377),
             title: 'Security Guards',
-            icon: Icons.shield_outlined,
+            ghostIcon: Icons.shield_outlined,
             employeeCount: data.securityCount,
             payroll: data.securityPayroll,
+            trendIcon: Icons.arrow_forward,
+            accentColor: const Color(0xFF0D7377),
             fmt: fmt,
-            fmtPay: fmtPay,
             onTap: () => onNavigate?.call(NavRoute.cat('security', 'list')),
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: _CatCard(
-            badge: 'CONTRACTUAL',
-            badgeColor: const Color(0xFF2E7D32),
             title: 'Al Fajar',
-            icon: Icons.cleaning_services_outlined,
+            ghostIcon: Icons.grid_view_outlined,
             employeeCount: data.alfajarCount,
             payroll: data.alfajarPayroll,
+            trendIcon: Icons.trending_up,
+            accentColor: const Color(0xFF2E7D32),
             fmt: fmt,
-            fmtPay: fmtPay,
             onTap: () => onNavigate?.call(NavRoute.cat('alfajar', 'list')),
           ),
         ),
@@ -296,23 +465,23 @@ class _CategoryCards extends StatelessWidget {
 }
 
 class _CatCard extends StatelessWidget {
-  final String badge, title;
-  final Color badgeColor;
-  final IconData icon;
+  final String title;
+  final IconData ghostIcon;
   final int employeeCount;
   final double payroll;
-  final NumberFormat fmt, fmtPay;
+  final IconData trendIcon;
+  final Color accentColor;
+  final NumberFormat fmt;
   final VoidCallback onTap;
 
   const _CatCard({
-    required this.badge,
-    required this.badgeColor,
     required this.title,
-    required this.icon,
+    required this.ghostIcon,
     required this.employeeCount,
     required this.payroll,
+    required this.trendIcon,
+    required this.accentColor,
     required this.fmt,
-    required this.fmtPay,
     required this.onTap,
   });
 
@@ -332,75 +501,78 @@ class _CatCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: badgeColor.withValues(alpha: isDark ? 0.25 : 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                  Expanded(
                     child: Text(
-                      badge,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? badgeColor.withValues(alpha: 0.9) : badgeColor,
-                        letterSpacing: 0.5,
-                      ),
+                      title,
+                      style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
-                  const Spacer(),
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: badgeColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(icon, color: badgeColor, size: 22),
+                  Icon(
+                    ghostIcon,
+                    size: 52,
+                    color: cs.onSurface.withValues(alpha: isDark ? 0.05 : 0.07),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700, fontSize: 18),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total Employees',
-                        style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        fmt.format(employeeCount),
-                        style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ],
+                  Text(
+                    fmt.format(employeeCount),
+                    style: tt.displayMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 38,
+                      color: cs.onSurface,
+                    ),
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'Monthly Payroll',
-                        style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        payroll > 0 ? 'Rs. ${fmtPay.format(payroll)}' : '—',
-                        style: tt.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: cs.primary,
+                  const SizedBox(width: 6),
+                  Text(
+                    'Staff',
+                    style: tt.bodyMedium?.copyWith(color: cs.onSurface.withValues(alpha: 0.45)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Divider(height: 1, color: cs.onSurface.withValues(alpha: 0.08)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'MONTHLY PAYROLL',
+                          style: tt.labelSmall?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.45),
+                            letterSpacing: 0.7,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 3),
+                        Text(
+                          payroll > 0 ? 'PKR ${fmt.format(payroll)}' : 'PKR —',
+                          style: tt.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: accentColor,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(trendIcon, size: 16, color: accentColor),
                   ),
                 ],
               ),
@@ -412,11 +584,11 @@ class _CatCard extends StatelessWidget {
   }
 }
 
-// ── Payroll Expenditure History chart ─────────────────────────────────────────
+// ── Payroll Comparison Chart ──────────────────────────────────────────────────
 
-class _ExpenditureChart extends StatelessWidget {
+class _ComparisonChart extends StatelessWidget {
   final _DashboardData data;
-  const _ExpenditureChart({required this.data});
+  const _ComparisonChart({required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -425,13 +597,36 @@ class _ExpenditureChart extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fmt = NumberFormat.compact(locale: 'en_US');
 
-    final totals = data.chartTotals;
-    final labels = data.chartLabels;
-    final maxVal = totals.fold(0.0, (m, v) => v > m ? v : m);
-    final chartMax = maxVal > 0 ? maxVal * 1.25 : 100000.0;
-    final hasData = maxVal > 0;
+    final currentColor = cs.primary;
+    final prevColor = cs.primary.withValues(alpha: 0.28);
 
-    final spots = List.generate(totals.length, (i) => FlSpot(i.toDouble(), totals[i]));
+    final allVals = [
+      data.pedoPayroll, data.securityPayroll, data.alfajarPayroll,
+      data.pedoPrevPayroll, data.securityPrevPayroll, data.alfajarPrevPayroll,
+    ];
+    final maxVal = allVals.fold(0.0, (m, v) => v > m ? v : m);
+    final chartMax = maxVal > 0 ? maxVal * 1.3 : 100000.0;
+
+    BarChartGroupData makeGroup(int x, double cur, double prev) {
+      return BarChartGroupData(
+        x: x,
+        barsSpace: 4,
+        barRods: [
+          BarChartRodData(
+            toY: cur,
+            color: currentColor,
+            width: 18,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+          ),
+          BarChartRodData(
+            toY: prev,
+            color: prevColor,
+            width: 18,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+          ),
+        ],
+      );
+    }
 
     return Card(
       child: Padding(
@@ -441,127 +636,79 @@ class _ExpenditureChart extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('Payroll Expenditure History', style: tt.headlineSmall),
+                Text('Payroll Comparison (PKR)', style: tt.headlineSmall),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.15)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Last 6 Months', style: tt.labelSmall),
-                      const SizedBox(width: 4),
-                      Icon(Icons.keyboard_arrow_down, size: 16, color: cs.onSurface.withValues(alpha: 0.5)),
-                    ],
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _LegendDot(color: currentColor),
+                    const SizedBox(width: 5),
+                    Text('Current', style: tt.labelSmall),
+                    const SizedBox(width: 14),
+                    _LegendDot(color: prevColor),
+                    const SizedBox(width: 5),
+                    Text('Previous', style: tt.labelSmall),
+                  ],
                 ),
               ],
             ),
             const SizedBox(height: 24),
             SizedBox(
               height: 200,
-              child: hasData
-                  ? LineChart(
-                      LineChartData(
-                        minY: 0,
-                        maxY: chartMax,
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: spots,
-                            isCurved: true,
-                            color: cs.primary,
-                            barWidth: 2.5,
-                            dotData: FlDotData(
-                              show: true,
-                              getDotPainter: (spot, _, _, _) => FlDotCirclePainter(
-                                radius: 4,
-                                color: cs.primary,
-                                strokeWidth: 2,
-                                strokeColor: isDark ? const Color(0xFF252537) : Colors.white,
+              child: BarChart(
+                BarChartData(
+                  maxY: chartMax,
+                  barGroups: [
+                    makeGroup(0, data.pedoPayroll, data.pedoPrevPayroll),
+                    makeGroup(1, data.securityPayroll, data.securityPrevPayroll),
+                    makeGroup(2, data.alfajarPayroll, data.alfajarPrevPayroll),
+                  ],
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 52,
+                        getTitlesWidget: (v, _) => v == 0
+                            ? const SizedBox.shrink()
+                            : Text(
+                                fmt.format(v),
+                                style: tt.labelSmall?.copyWith(fontSize: 10),
                               ),
-                            ),
-                            belowBarData: BarAreaData(
-                              show: true,
-                              gradient: LinearGradient(
-                                colors: [
-                                  cs.primary.withValues(alpha: 0.15),
-                                  cs.primary.withValues(alpha: 0.0),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                          ),
-                        ],
-                        titlesData: FlTitlesData(
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 52,
-                              getTitlesWidget: (v, _) => v == 0
-                                  ? const SizedBox.shrink()
-                                  : Text(
-                                      fmt.format(v),
-                                      style: tt.labelSmall?.copyWith(fontSize: 10),
-                                    ),
-                            ),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 28,
-                              getTitlesWidget: (v, _) {
-                                final i = v.toInt();
-                                if (i < 0 || i >= labels.length) return const SizedBox.shrink();
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Text(
-                                    labels[i],
-                                    style: tt.labelSmall?.copyWith(fontSize: 11),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        ),
-                        gridData: FlGridData(
-                          show: true,
-                          drawVerticalLine: false,
-                          getDrawingHorizontalLine: (_) => FlLine(
-                            color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
-                            strokeWidth: 1,
-                          ),
-                        ),
-                        borderData: FlBorderData(show: false),
-                        lineTouchData: LineTouchData(
-                          touchTooltipData: LineTouchTooltipData(
-                            getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-                              'Rs. ${fmt.format(s.y)}',
-                              TextStyle(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                              ),
-                            )).toList(),
-                          ),
-                        ),
-                      ),
-                    )
-                  : Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.show_chart, size: 48, color: cs.onSurface.withValues(alpha: 0.2)),
-                          const SizedBox(height: 8),
-                          Text('No payroll data yet', style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
-                        ],
                       ),
                     ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 28,
+                        getTitlesWidget: (v, _) {
+                          const labels = ['PEDO', 'Guards', 'Al Fajar'];
+                          final i = v.toInt();
+                          if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              labels[i],
+                              style: tt.labelSmall?.copyWith(fontSize: 11),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (_) => FlLine(
+                      color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barTouchData: BarTouchData(enabled: true),
+                ),
+              ),
             ),
           ],
         ),
@@ -570,35 +717,25 @@ class _ExpenditureChart extends StatelessWidget {
   }
 }
 
-// ── Recent activity ───────────────────────────────────────────────────────────
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  const _LegendDot({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+// ── Recent Activity ───────────────────────────────────────────────────────────
 
 class _RecentActivity extends StatelessWidget {
-  final List<Employee> employees;
-  const _RecentActivity({required this.employees});
-
-  static const _catLabels = {'pedo': 'PEDO', 'security': 'Security', 'alfajar': 'Al Fajar'};
-  static const _catColors = {
-    'pedo': Color(0xFF1565C0),
-    'security': Color(0xFF0D7377),
-    'alfajar': Color(0xFF2E7D32),
-  };
-
-  String _relativeDate(String createdAt) {
-    try {
-      final dt = DateTime.parse(createdAt);
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-      if (diff.inDays == 0) {
-        return 'Today at ${DateFormat('hh:mm a').format(dt)}';
-      } else if (diff.inDays == 1) {
-        return 'Yesterday';
-      } else {
-        return DateFormat('MMM d, yyyy').format(dt);
-      }
-    } catch (_) {
-      return createdAt;
-    }
-  }
+  final List<_ActivityItem> activities;
+  const _RecentActivity({required this.activities});
 
   @override
   Widget build(BuildContext context) {
@@ -611,29 +748,45 @@ class _RecentActivity extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Recent Activity', style: tt.headlineSmall),
+            Row(
+              children: [
+                Text('Recent Activity', style: tt.headlineSmall),
+                const Spacer(),
+                Text(
+                  'View All Logs',
+                  style: tt.labelMedium?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
-            if (employees.isEmpty)
-              Expanded(
-                child: Center(
+            if (activities.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.history, size: 40, color: cs.onSurface.withValues(alpha: 0.2)),
                       const SizedBox(height: 8),
-                      Text('No activity yet', style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4))),
+                      Text(
+                        'No activity yet',
+                        style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4)),
+                      ),
                     ],
                   ),
                 ),
               )
-            else ...[
-              ...employees.map((e) {
-                final catColor = _catColors[e.category] ?? cs.primary;
-                final catLabel = _catLabels[e.category] ?? e.category;
-                final dateStr = _relativeDate(e.createdAt);
+            else
+              ...activities.asMap().entries.map((entry) {
+                final i = entry.key;
+                final item = entry.value;
+                final isLast = i == activities.length - 1;
 
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -641,29 +794,38 @@ class _RecentActivity extends StatelessWidget {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: catColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
+                          color: item.iconBg,
+                          shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.person_add_outlined, size: 18, color: catColor),
+                        child: Icon(item.icon, size: 17, color: item.iconColor),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            RichText(
-                              text: TextSpan(
-                                style: tt.bodySmall?.copyWith(color: cs.onSurface),
-                                children: [
-                                  TextSpan(text: e.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  const TextSpan(text: ' added to '),
-                                  TextSpan(text: catLabel, style: TextStyle(fontWeight: FontWeight.w600, color: catColor)),
-                                  const TextSpan(text: ' category.'),
-                                ],
+                            Text(
+                              item.title,
+                              style: tt.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: cs.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item.description,
+                              style: tt.bodySmall?.copyWith(
+                                color: cs.onSurface.withValues(alpha: 0.55),
                               ),
                             ),
                             const SizedBox(height: 3),
-                            Text(dateStr, style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.45))),
+                            Text(
+                              item.meta,
+                              style: tt.labelSmall?.copyWith(
+                                color: cs.onSurface.withValues(alpha: 0.38),
+                                fontSize: 10,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -671,18 +833,6 @@ class _RecentActivity extends StatelessWidget {
                   ),
                 );
               }),
-              const SizedBox(height: 4),
-              GestureDetector(
-                onTap: () {},
-                child: Text(
-                  'View All Activity',
-                  style: tt.labelMedium?.copyWith(
-                    color: cs.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -690,7 +840,7 @@ class _RecentActivity extends StatelessWidget {
   }
 }
 
-// ── Bottom stats row ──────────────────────────────────────────────────────────
+// ── Bottom Stats ──────────────────────────────────────────────────────────────
 
 class _BottomStats extends StatelessWidget {
   final _DashboardData data;
@@ -699,43 +849,45 @@ class _BottomStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fmt = NumberFormat.compact(locale: 'en_US');
+    final totalStr = data.totalNetSalary > 0
+        ? 'PKR ${fmt.format(data.totalNetSalary)}'
+        : 'PKR —';
 
     return Row(
       children: [
         Expanded(
-          child: _StatCard(
-            icon: Icons.people_outline,
-            iconColor: const Color(0xFF1565C0),
-            label: 'Total Employees',
-            value: '${data.totalEmployees}',
+          child: _DarkStatCard(
+            icon: Icons.people_alt_outlined,
+            label: 'TOTAL EMPLOYEES',
+            value: '${data.totalEmployees} Active',
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _StatCard(
+          child: _NormalStatCard(
             icon: Icons.account_balance_wallet_outlined,
-            iconColor: const Color(0xFF2E7D32),
-            label: 'Total Net Salary',
-            value: data.totalNetSalary > 0 ? 'Rs. ${fmt.format(data.totalNetSalary)}' : '—',
+            iconBg: const Color(0xFF1B2235),
+            iconColor: Colors.white,
+            label: 'TOTAL PAYROLL',
+            value: totalStr,
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _StatCard(
-            icon: Icons.pending_actions_outlined,
-            iconColor: const Color(0xFFE67E22),
-            label: 'Pending Approvals',
-            value: '${data.pendingApprovals}',
+          child: _DangerStatCard(
+            icon: Icons.warning_amber_outlined,
+            label: 'PENDING SALARIES',
+            value: '${data.pendingApprovals} Pending',
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _StatCard(
-            icon: Icons.check_circle_outline,
+          child: _NormalStatCard(
+            icon: Icons.cloud_done_outlined,
+            iconBg: const Color(0xFFE8F5E9),
             iconColor: const Color(0xFF27AE60),
-            label: 'System Status',
-            value: 'Online',
-            valueColor: const Color(0xFF27AE60),
+            label: 'BACKUP STATUS',
+            value: 'Secured & Encrypted',
           ),
         ),
       ],
@@ -743,18 +895,69 @@ class _BottomStats extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
+class _DarkStatCard extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final String label, value;
-  final Color? valueColor;
+  const _DarkStatCard({required this.icon, required this.label, required this.value});
 
-  const _StatCard({
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B2235),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 22, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: tt.labelSmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NormalStatCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg, iconColor;
+  final String label, value;
+
+  const _NormalStatCard({
     required this.icon,
+    required this.iconBg,
     required this.iconColor,
     required this.label,
     required this.value,
-    this.valueColor,
   });
 
   @override
@@ -764,34 +967,34 @@ class _StatCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
+                color: iconBg,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, size: 20, color: iconColor),
+              child: Icon(icon, size: 22, color: iconColor),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
-                    style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.5),
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     value,
-                    style: tt.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: valueColor ?? cs.onSurface,
-                    ),
+                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -799,6 +1002,64 @@ class _StatCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DangerStatCard extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  const _DangerStatCard({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const red = Color(0xFFE53E3E);
+    final bg = isDark ? const Color(0xFF3D1A1A) : const Color(0xFFFFF5F5);
+    final border = red.withValues(alpha: isDark ? 0.3 : 0.15);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: red.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.warning_amber_outlined, size: 22, color: red),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: tt.labelSmall?.copyWith(
+                    color: red.withValues(alpha: 0.7),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: red),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -824,7 +1085,11 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 8),
           Text(error, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          ElevatedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+          ElevatedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
         ],
       ),
     );

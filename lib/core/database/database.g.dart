@@ -1515,6 +1515,17 @@ class $SalaryComponentsTable extends SalaryComponents
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _allowanceSectionMeta = const VerificationMeta(
+    'allowanceSection',
+  );
+  @override
+  late final GeneratedColumn<String> allowanceSection = GeneratedColumn<String>(
+    'allowance_section',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1530,6 +1541,7 @@ class $SalaryComponentsTable extends SalaryComponents
     freezeDate,
     isActive,
     sortOrder,
+    allowanceSection,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1637,6 +1649,15 @@ class $SalaryComponentsTable extends SalaryComponents
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('allowance_section')) {
+      context.handle(
+        _allowanceSectionMeta,
+        allowanceSection.isAcceptableOrUnknown(
+          data['allowance_section']!,
+          _allowanceSectionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1698,6 +1719,10 @@ class $SalaryComponentsTable extends SalaryComponents
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      allowanceSection: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}allowance_section'],
+      ),
     );
   }
 
@@ -1721,6 +1746,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
   final String? freezeDate;
   final bool isActive;
   final int sortOrder;
+  final String? allowanceSection;
   const SalaryComponent({
     required this.id,
     required this.employeeId,
@@ -1735,6 +1761,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
     this.freezeDate,
     required this.isActive,
     required this.sortOrder,
+    this.allowanceSection,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1760,6 +1787,9 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
     }
     map['is_active'] = Variable<bool>(isActive);
     map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || allowanceSection != null) {
+      map['allowance_section'] = Variable<String>(allowanceSection);
+    }
     return map;
   }
 
@@ -1786,6 +1816,9 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
           : Value(freezeDate),
       isActive: Value(isActive),
       sortOrder: Value(sortOrder),
+      allowanceSection: allowanceSection == null && nullToAbsent
+          ? const Value.absent()
+          : Value(allowanceSection),
     );
   }
 
@@ -1810,6 +1843,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
       freezeDate: serializer.fromJson<String?>(json['freezeDate']),
       isActive: serializer.fromJson<bool>(json['isActive']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      allowanceSection: serializer.fromJson<String?>(json['allowanceSection']),
     );
   }
   @override
@@ -1829,6 +1863,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
       'freezeDate': serializer.toJson<String?>(freezeDate),
       'isActive': serializer.toJson<bool>(isActive),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'allowanceSection': serializer.toJson<String?>(allowanceSection),
     };
   }
 
@@ -1846,6 +1881,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
     Value<String?> freezeDate = const Value.absent(),
     bool? isActive,
     int? sortOrder,
+    Value<String?> allowanceSection = const Value.absent(),
   }) => SalaryComponent(
     id: id ?? this.id,
     employeeId: employeeId ?? this.employeeId,
@@ -1862,6 +1898,9 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
     freezeDate: freezeDate.present ? freezeDate.value : this.freezeDate,
     isActive: isActive ?? this.isActive,
     sortOrder: sortOrder ?? this.sortOrder,
+    allowanceSection: allowanceSection.present
+        ? allowanceSection.value
+        : this.allowanceSection,
   );
   SalaryComponent copyWithCompanion(SalaryComponentsCompanion data) {
     return SalaryComponent(
@@ -1892,6 +1931,9 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
           : this.freezeDate,
       isActive: data.isActive.present ? data.isActive.value : this.isActive,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      allowanceSection: data.allowanceSection.present
+          ? data.allowanceSection.value
+          : this.allowanceSection,
     );
   }
 
@@ -1910,7 +1952,8 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
           ..write('frozenBase: $frozenBase, ')
           ..write('freezeDate: $freezeDate, ')
           ..write('isActive: $isActive, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('allowanceSection: $allowanceSection')
           ..write(')'))
         .toString();
   }
@@ -1930,6 +1973,7 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
     freezeDate,
     isActive,
     sortOrder,
+    allowanceSection,
   );
   @override
   bool operator ==(Object other) =>
@@ -1947,7 +1991,8 @@ class SalaryComponent extends DataClass implements Insertable<SalaryComponent> {
           other.frozenBase == this.frozenBase &&
           other.freezeDate == this.freezeDate &&
           other.isActive == this.isActive &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.allowanceSection == this.allowanceSection);
 }
 
 class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
@@ -1964,6 +2009,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
   final Value<String?> freezeDate;
   final Value<bool> isActive;
   final Value<int> sortOrder;
+  final Value<String?> allowanceSection;
   const SalaryComponentsCompanion({
     this.id = const Value.absent(),
     this.employeeId = const Value.absent(),
@@ -1978,6 +2024,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
     this.freezeDate = const Value.absent(),
     this.isActive = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.allowanceSection = const Value.absent(),
   });
   SalaryComponentsCompanion.insert({
     this.id = const Value.absent(),
@@ -1993,6 +2040,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
     this.freezeDate = const Value.absent(),
     this.isActive = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.allowanceSection = const Value.absent(),
   }) : employeeId = Value(employeeId),
        name = Value(name),
        componentType = Value(componentType),
@@ -2012,6 +2060,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
     Expression<String>? freezeDate,
     Expression<bool>? isActive,
     Expression<int>? sortOrder,
+    Expression<String>? allowanceSection,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2027,6 +2076,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
       if (freezeDate != null) 'freeze_date': freezeDate,
       if (isActive != null) 'is_active': isActive,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (allowanceSection != null) 'allowance_section': allowanceSection,
     });
   }
 
@@ -2044,6 +2094,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
     Value<String?>? freezeDate,
     Value<bool>? isActive,
     Value<int>? sortOrder,
+    Value<String?>? allowanceSection,
   }) {
     return SalaryComponentsCompanion(
       id: id ?? this.id,
@@ -2059,6 +2110,7 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
       freezeDate: freezeDate ?? this.freezeDate,
       isActive: isActive ?? this.isActive,
       sortOrder: sortOrder ?? this.sortOrder,
+      allowanceSection: allowanceSection ?? this.allowanceSection,
     );
   }
 
@@ -2104,6 +2156,9 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (allowanceSection.present) {
+      map['allowance_section'] = Variable<String>(allowanceSection.value);
+    }
     return map;
   }
 
@@ -2122,7 +2177,8 @@ class SalaryComponentsCompanion extends UpdateCompanion<SalaryComponent> {
           ..write('frozenBase: $frozenBase, ')
           ..write('freezeDate: $freezeDate, ')
           ..write('isActive: $isActive, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('allowanceSection: $allowanceSection')
           ..write(')'))
         .toString();
   }
@@ -3669,6 +3725,7 @@ typedef $$SalaryComponentsTableCreateCompanionBuilder =
       Value<String?> freezeDate,
       Value<bool> isActive,
       Value<int> sortOrder,
+      Value<String?> allowanceSection,
     });
 typedef $$SalaryComponentsTableUpdateCompanionBuilder =
     SalaryComponentsCompanion Function({
@@ -3685,6 +3742,7 @@ typedef $$SalaryComponentsTableUpdateCompanionBuilder =
       Value<String?> freezeDate,
       Value<bool> isActive,
       Value<int> sortOrder,
+      Value<String?> allowanceSection,
     });
 
 final class $$SalaryComponentsTableReferences
@@ -3783,6 +3841,11 @@ class $$SalaryComponentsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$EmployeesTableFilterComposer get employeeId {
     final $$EmployeesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -3876,6 +3939,11 @@ class $$SalaryComponentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$EmployeesTableOrderingComposer get employeeId {
     final $$EmployeesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3957,6 +4025,11 @@ class $$SalaryComponentsTableAnnotationComposer
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
+  GeneratedColumn<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => column,
+  );
+
   $$EmployeesTableAnnotationComposer get employeeId {
     final $$EmployeesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -4024,6 +4097,7 @@ class $$SalaryComponentsTableTableManager
                 Value<String?> freezeDate = const Value.absent(),
                 Value<bool> isActive = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String?> allowanceSection = const Value.absent(),
               }) => SalaryComponentsCompanion(
                 id: id,
                 employeeId: employeeId,
@@ -4038,6 +4112,7 @@ class $$SalaryComponentsTableTableManager
                 freezeDate: freezeDate,
                 isActive: isActive,
                 sortOrder: sortOrder,
+                allowanceSection: allowanceSection,
               ),
           createCompanionCallback:
               ({
@@ -4054,6 +4129,7 @@ class $$SalaryComponentsTableTableManager
                 Value<String?> freezeDate = const Value.absent(),
                 Value<bool> isActive = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String?> allowanceSection = const Value.absent(),
               }) => SalaryComponentsCompanion.insert(
                 id: id,
                 employeeId: employeeId,
@@ -4068,6 +4144,7 @@ class $$SalaryComponentsTableTableManager
                 freezeDate: freezeDate,
                 isActive: isActive,
                 sortOrder: sortOrder,
+                allowanceSection: allowanceSection,
               ),
           withReferenceMapper: (p0) => p0
               .map(

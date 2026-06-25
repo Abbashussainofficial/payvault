@@ -62,6 +62,8 @@ class SalaryComponents extends Table {
   TextColumn get freezeDate => text().nullable()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  // 'regular' or 'other' for pedo allowances; null for deductions and non-pedo
+  TextColumn get allowanceSection => text().nullable()();
 }
 
 class PayrollRecords extends Table {
@@ -205,13 +207,22 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
 
   Future<List<PayrollRecord>> getRecordsByEmployee(int employeeId) =>
       (select(payrollRecords)
-            ..where((t) => t.employeeId.equals(employeeId)))
+            ..where((t) => t.employeeId.equals(employeeId))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.year, mode: OrderingMode.desc),
+              (t) => OrderingTerm(expression: t.month, mode: OrderingMode.desc),
+            ]))
           .get();
 
   Future<List<PayrollRecord>> getRecordsByMonthYear(int month, int year) =>
       (select(payrollRecords)
             ..where((t) => t.month.equals(month) & t.year.equals(year)))
           .get();
+
+  Stream<List<PayrollRecord>> watchRecordsByMonthYear(int month, int year) =>
+      (select(payrollRecords)
+            ..where((t) => t.month.equals(month) & t.year.equals(year)))
+          .watch();
 
   Future<PayrollRecord?> getRecord(int employeeId, int month, int year) =>
       (select(payrollRecords)
@@ -223,6 +234,12 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
             ))
           .getSingleOrNull();
 
+  /// Insert or replace — safe to call even when a record already exists for
+  /// the same (employeeId, month, year) thanks to the unique index added in
+  /// schema version 2.
+  Future<int> upsertRecord(PayrollRecordsCompanion record) =>
+      into(payrollRecords).insertOnConflictUpdate(record);
+
   Future<int> insertRecord(PayrollRecordsCompanion record) =>
       into(payrollRecords).insert(record);
 
@@ -233,8 +250,15 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
       (update(payrollRecords)..where((t) => t.id.equals(id)))
           .write(const PayrollRecordsCompanion(isLocked: Value(true)));
 
+  Future<int> unlockRecord(int id) =>
+      (update(payrollRecords)..where((t) => t.id.equals(id)))
+          .write(const PayrollRecordsCompanion(isLocked: Value(false)));
+
   Future<int> deleteRecord(int id) =>
       (delete(payrollRecords)..where((t) => t.id.equals(id))).go();
+
+  Future<int> deleteRecordsByEmployee(int employeeId) =>
+      (delete(payrollRecords)..where((t) => t.employeeId.equals(employeeId))).go();
 
   Future<List<PayrollRecord>> getAllRecords() => select(payrollRecords).get();
 }
@@ -259,12 +283,33 @@ class AppDatabase extends _$AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (Migrator m) async {
       await m.createAll();
+      // Enforce one record per employee per month/year.
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_unique '
+        'ON payroll_records(employee_id, month, year)',
+      );
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await customStatement(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_unique '
+          'ON payroll_records(employee_id, month, year)',
+        );
+      }
+      if (from < 3) {
+        await m.addColumn(salaryComponents, salaryComponents.allowanceSection);
+        // Existing pedo allowances default to 'regular'
+        await customStatement(
+          "UPDATE salary_components SET allowance_section = 'regular' "
+          "WHERE component_type = 'allowance'",
+        );
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');

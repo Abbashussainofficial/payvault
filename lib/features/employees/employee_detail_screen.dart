@@ -5,6 +5,7 @@ import '../../core/database/database.dart';
 import '../../core/utils/salary_calculator.dart';
 import '../salary/salary_structure_screen.dart';
 import 'employee_form_screen.dart';
+import 'employee_payroll_history.dart';
 
 class EmployeeDetailScreen extends StatefulWidget {
   final Employee employee;
@@ -26,9 +27,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen>
   late final TabController _tabController;
 
   List<SalaryComponent> _components = [];
-  List<PayrollRecord> _payrollHistory = [];
   bool _loadingComponents = true;
-  bool _loadingPayroll = true;
 
   static const _categoryLabels = {
     'pedo': 'PEDO Employees',
@@ -52,22 +51,49 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen>
 
   Future<void> _loadData() async {
     final db = AppDatabase.instance;
-    final components = await db.salaryComponentsDao
-        .getComponentsByEmployee(_employee.id);
-    final payroll = await db.payrollRecordsDao
-        .getRecordsByEmployee(_employee.id);
-
+    final components = await db.salaryComponentsDao.getComponentsByEmployee(_employee.id);
     if (!mounted) return;
     setState(() {
       _components = components;
-      _payrollHistory = payroll
-        ..sort((a, b) {
-          final cmp = b.year.compareTo(a.year);
-          return cmp != 0 ? cmp : b.month.compareTo(a.month);
-        });
       _loadingComponents = false;
-      _loadingPayroll = false;
     });
+  }
+
+  Future<void> _deleteEmployee() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Employee?'),
+        content: Text(
+          'This will permanently delete ${_employee.fullName} and cannot be undone. '
+          'Their payroll history will also be deleted.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final db = AppDatabase.instance;
+    await db.payrollRecordsDao.deleteRecordsByEmployee(_employee.id);
+    await db.salaryComponentsDao.deleteComponentsByEmployee(_employee.id);
+    await db.employeesDao.deleteEmployee(_employee.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Employee deleted successfully')),
+    );
+    Navigator.of(context).pop();
   }
 
   Future<void> _openEdit() async {
@@ -136,6 +162,16 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen>
             onPressed: _openEdit,
             icon: const Icon(Icons.edit_outlined, size: 18),
             label: const Text('Edit'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: _deleteEmployee,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('Delete'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
           ),
           const SizedBox(width: 16),
         ],
@@ -261,10 +297,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen>
                     _loadData();
                   },
                 ),
-                _PayrollHistoryTab(
-                  records: _payrollHistory,
-                  loading: _loadingPayroll,
-                  cs: cs,
+                EmployeePayrollHistoryTab(
+                  employee: _employee,
+                  category: widget.category,
                 ),
               ],
             ),
@@ -624,129 +659,6 @@ class _ComponentSection extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ── Payroll History tab ───────────────────────────────────────────────────────
-
-class _PayrollHistoryTab extends StatelessWidget {
-  final List<PayrollRecord> records;
-  final bool loading;
-  final ColorScheme cs;
-
-  const _PayrollHistoryTab({
-    required this.records,
-    required this.loading,
-    required this.cs,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-
-    if (records.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.receipt_long_outlined,
-              size: 56,
-              color: cs.onSurface.withValues(alpha: 0.2),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'No payroll records',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.45),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final fmt = NumberFormat.currency(
-      locale: 'en_PK',
-      symbol: 'PKR ',
-      decimalDigits: 0,
-    );
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(20),
-      itemCount: records.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) {
-        final r = records[i];
-        final monthLabel = DateFormat('MMMM yyyy').format(
-          DateTime(r.year, r.month),
-        );
-        return Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.receipt_outlined,
-                  size: 20,
-                  color: cs.primary.withValues(alpha: 0.6),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    monthLabel,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                if (r.isLocked)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'Locked',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      fmt.format(r.netSalary),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: cs.primary,
-                      ),
-                    ),
-                    Text(
-                      '+${fmt.format(r.totalAllowances)}  −${fmt.format(r.totalDeductions)}',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

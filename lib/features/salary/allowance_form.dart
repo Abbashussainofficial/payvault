@@ -6,37 +6,36 @@ import 'package:intl/intl.dart';
 import '../../core/database/database.dart';
 import '../../core/utils/salary_calculator.dart';
 
-/// Shows a dialog to add or edit a salary component (allowance or deduction).
-/// Returns `true` when a save was performed, `null`/`false` otherwise.
 Future<bool?> showAllowanceForm({
   required BuildContext context,
   required Employee employee,
-  required String componentType, // 'allowance' | 'deduction'
-  SalaryComponent? component,    // null = add mode
+  required String componentType,
+  SalaryComponent? component,
+  String? allowanceSection,
 }) {
   return showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder:
-        (_) => _AllowanceFormDialog(
-          employee: employee,
-          componentType: componentType,
-          component: component,
-        ),
+    builder: (_) => _AllowanceFormDialog(
+      employee: employee,
+      componentType: componentType,
+      component: component,
+      allowanceSection: allowanceSection,
+    ),
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _AllowanceFormDialog extends StatefulWidget {
   final Employee employee;
   final String componentType;
   final SalaryComponent? component;
+  final String? allowanceSection;
 
   const _AllowanceFormDialog({
     required this.employee,
     required this.componentType,
     required this.component,
+    this.allowanceSection,
   });
 
   @override
@@ -52,24 +51,26 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
   late final TextEditingController _codeCtrl;
   late final TextEditingController _valueCtrl;
 
-  late String _valueType;   // 'percentage' | 'fixed'
-  late String _freezeMode;  // 'not_frozen' | 'frozen_on_amount' | 'frozen_on_base'
+  late String _valueType;
+  late String _freezeMode;
   late bool _isActive;
   late int _sortOrder;
 
   bool get _isEdit => widget.component != null;
   bool get _isAllowance => widget.componentType == 'allowance';
+  bool get _isPedo => widget.employee.category == 'pedo';
   double get _baseSalary => widget.employee.baseSalary;
 
-  // Live preview of the calculated amount based on current form values
+  // Section from the existing component (edit) or the button that was tapped (add)
+  String? get _effectiveSection =>
+      _isEdit ? widget.component!.allowanceSection : widget.allowanceSection;
+
   double get _previewAmount {
     final v = double.tryParse(_valueCtrl.text.trim()) ?? 0.0;
-    return SalaryCalculator.previewAmount(
-      valueType: _valueType,
-      value: v,
-      baseSalary: _baseSalary,
-    );
+    return SalaryCalculator.previewAmount(valueType: _valueType, value: v, baseSalary: _baseSalary);
   }
+
+  static final _fmt = NumberFormat.currency(locale: 'en_PK', symbol: 'Rs. ', decimalDigits: 0);
 
   @override
   void initState() {
@@ -78,13 +79,12 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
     _nameCtrl = TextEditingController(text: c?.name ?? '');
     _codeCtrl = TextEditingController(text: c?.classificationCode ?? '');
     _valueCtrl = TextEditingController(
-      text: c != null ? c.value.toStringAsFixed(c.valueType == 'percentage' ? 2 : 0) : '',
+      text: c != null ? c.value.toStringAsFixed(0) : '',
     );
     _valueType = c?.valueType ?? 'percentage';
     _freezeMode = c?.freezeMode ?? 'not_frozen';
     _isActive = c?.isActive ?? true;
     _sortOrder = c?.sortOrder ?? 0;
-
     _valueCtrl.addListener(() => setState(() {}));
   }
 
@@ -98,18 +98,16 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() { _saving = true; _error = null; });
 
     try {
       final dao = AppDatabase.instance.salaryComponentsDao;
       final value = double.tryParse(_valueCtrl.text.trim()) ?? 0.0;
       final now = DateTime.now().toIso8601String();
+      final code = _isPedo && _codeCtrl.text.trim().isNotEmpty
+          ? _codeCtrl.text.trim()
+          : null;
 
-      // Compute freeze fields
       double? frozenAmount;
       double? frozenBase;
       String? freezeDate;
@@ -117,24 +115,19 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
       switch (_freezeMode) {
         case 'frozen_on_amount':
           frozenAmount = _previewAmount;
-          frozenBase = null;
           freezeDate = now;
         case 'frozen_on_base':
-          frozenAmount = null;
           frozenBase = _baseSalary;
           freezeDate = now;
-        default: // not_frozen
-          frozenAmount = null;
-          frozenBase = null;
-          freezeDate = null;
+        default:
+          break;
       }
 
       if (_isEdit) {
-        final updated = widget.component!.copyWith(
+        await dao.updateComponent(widget.component!.copyWith(
           name: _nameCtrl.text.trim(),
-          classificationCode: Value(
-            _codeCtrl.text.trim().isEmpty ? null : _codeCtrl.text.trim(),
-          ),
+          classificationCode: Value(code),
+          allowanceSection: Value(_effectiveSection),
           valueType: _valueType,
           value: value,
           freezeMode: _freezeMode,
@@ -143,535 +136,407 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
           freezeDate: Value(freezeDate),
           isActive: _isActive,
           sortOrder: _sortOrder,
-        );
-        await dao.updateComponent(updated);
+        ));
       } else {
-        await dao.insertComponent(
-          SalaryComponentsCompanion(
-            employeeId: Value(widget.employee.id),
-            name: Value(_nameCtrl.text.trim()),
-            componentType: Value(widget.componentType),
-            classificationCode: Value(
-              _codeCtrl.text.trim().isEmpty ? null : _codeCtrl.text.trim(),
-            ),
-            valueType: Value(_valueType),
-            value: Value(value),
-            freezeMode: Value(_freezeMode),
-            frozenAmount: Value(frozenAmount),
-            frozenBase: Value(frozenBase),
-            freezeDate: Value(freezeDate),
-            isActive: Value(_isActive),
-            sortOrder: Value(_sortOrder),
-          ),
-        );
+        await dao.insertComponent(SalaryComponentsCompanion(
+          employeeId: Value(widget.employee.id),
+          name: Value(_nameCtrl.text.trim()),
+          componentType: Value(widget.componentType),
+          classificationCode: Value(code),
+          allowanceSection: Value(_effectiveSection),
+          valueType: Value(_valueType),
+          value: Value(value),
+          freezeMode: Value(_freezeMode),
+          frozenAmount: Value(frozenAmount),
+          frozenBase: Value(frozenBase),
+          freezeDate: Value(freezeDate),
+          isActive: Value(_isActive),
+          sortOrder: Value(_sortOrder),
+        ));
       }
 
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
-      setState(() {
-        _error = 'Failed to save: $e';
-        _saving = false;
-      });
+      setState(() { _error = 'Failed to save: $e'; _saving = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final title = _isEdit
         ? 'Edit ${_isAllowance ? 'Allowance' : 'Deduction'}'
-        : 'Add ${_isAllowance ? 'Allowance' : 'Deduction'}';
+        : 'Add New ${_isAllowance ? 'Allowance' : 'Deduction'}';
+    final saveLabel = _isEdit ? 'Save Changes' : (_isAllowance ? 'Add Allowance' : 'Add Deduction');
 
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Title
-                  Row(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Dialog header ────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  child: Row(
                     children: [
-                      Icon(
-                        _isAllowance
-                            ? Icons.add_circle_outline
-                            : Icons.remove_circle_outline,
-                        color: _isAllowance
-                            ? const Color(0xFF2E7D32)
-                            : cs.error,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                       const Spacer(),
                       IconButton(
-                        icon: const Icon(Icons.close),
                         onPressed: () => Navigator.pop(context, false),
+                        icon: Icon(Icons.close, size: 20, color: cs.onSurface.withValues(alpha: 0.5)),
                         visualDensity: VisualDensity.compact,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
 
-                  if (_error != null) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cs.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: cs.onErrorContainer),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // ── Name ──────────────────────────────────────────────────
-                  _label(context, 'Name *'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. House Rent Allowance',
-                    ),
-                    validator:
-                        (v) => (v == null || v.trim().isEmpty)
-                            ? 'Required'
-                            : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Classification Code ───────────────────────────────────
-                  _label(context, 'Classification Code'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _codeCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. HRA (optional)',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Value Type toggle ─────────────────────────────────────
-                  _label(context, 'Value Type'),
-                  const SizedBox(height: 8),
-                  _ValueTypeToggle(
-                    selected: _valueType,
-                    onChanged: (v) => setState(() => _valueType = v),
-                    cs: cs,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Value ─────────────────────────────────────────────────
-                  _label(
-                    context,
-                    _valueType == 'percentage'
-                        ? 'Percentage (%) *'
-                        : 'Fixed Amount (PKR) *',
-                  ),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _valueCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                    ],
-                    decoration: InputDecoration(
-                      hintText: _valueType == 'percentage' ? '0.00' : '0',
-                      suffixText:
-                          _valueType == 'percentage' ? '%' : 'PKR',
-                    ),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Required';
-                      if (double.tryParse(v.trim()) == null) {
-                        return 'Enter a valid number';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  // ── Freeze Mode ───────────────────────────────────────────
-                  _label(context, 'Freeze Mode'),
-                  const SizedBox(height: 8),
-                  _FreezeModeSelector(
-                    selected: _freezeMode,
-                    previewAmount: _previewAmount,
-                    baseSalary: _baseSalary,
-                    onChanged: (v) => setState(() => _freezeMode = v),
-                    cs: cs,
-                  ),
-                  const SizedBox(height: 20),
-
-                  // ── Active toggle ─────────────────────────────────────────
-                  Row(
+                // ── Form body ────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Active',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
+                      if (_error != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: cs.errorContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(_error!, style: TextStyle(color: cs.onErrorContainer, fontSize: 13)),
+                        ),
+                      ],
+
+                      // Section banner — shown for pedo allowances
+                      if (_isAllowance && _effectiveSection != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: _effectiveSection == 'regular'
+                                ? const Color(0xFF27AE60).withValues(alpha: isDark ? 0.15 : 0.08)
+                                : const Color(0xFF7B68EE).withValues(alpha: isDark ? 0.15 : 0.08),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: _effectiveSection == 'regular'
+                                  ? const Color(0xFF27AE60).withValues(alpha: 0.3)
+                                  : const Color(0xFF7B68EE).withValues(alpha: 0.3),
                             ),
-                            Text(
-                              'Inactive components are excluded from calculations',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.5),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.label_outline,
+                                size: 15,
+                                color: _effectiveSection == 'regular'
+                                    ? const Color(0xFF27AE60)
+                                    : const Color(0xFF7B68EE),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _effectiveSection == 'regular'
+                                    ? 'Adding to: Regular Allowances'
+                                    : 'Adding to: Other Allowances',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: _effectiveSection == 'regular'
+                                      ? const Color(0xFF27AE60)
+                                      : const Color(0xFF7B68EE),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Name field
+                      Text(
+                        _isAllowance ? 'Allowance Name' : 'Deduction Name',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: _nameCtrl,
+                        decoration: InputDecoration(
+                          hintText: _isAllowance ? 'e.g. Utility Allowance' : 'e.g. Income Tax',
+                        ),
+                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Classification code — pedo only
+                      if (_isPedo) ...[
+                        Text(
+                          'Classification Code (Optional)',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _codeCtrl,
+                          decoration: const InputDecoration(hintText: 'e.g. 02200'),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Type + Value in a row
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // Type toggle
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Type', style: Theme.of(context).textTheme.labelMedium),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    _TypeBtn(
+                                      label: 'Percentage',
+                                      selected: _valueType == 'percentage',
+                                      onTap: () => setState(() => _valueType = 'percentage'),
+                                      cs: cs,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _TypeBtn(
+                                      label: 'Fixed',
+                                      selected: _valueType == 'fixed',
+                                      onTap: () => setState(() => _valueType = 'fixed'),
+                                      cs: cs,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          // Value field
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Value', style: Theme.of(context).textTheme.labelMedium),
+                                const SizedBox(height: 6),
+                                TextFormField(
+                                  controller: _valueCtrl,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                                  decoration: InputDecoration(
+                                    hintText: _valueType == 'percentage' ? '10' : '5000',
+                                    suffixText: _valueType == 'percentage' ? '%' : 'PKR',
                                   ),
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) return 'Required';
+                                    if (double.tryParse(v.trim()) == null) return 'Invalid number';
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Live Preview
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1565C0).withValues(alpha: isDark ? 0.15 : 0.07),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF1565C0).withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.bar_chart_outlined, size: 18, color: const Color(0xFF1565C0)),
+                            const SizedBox(width: 10),
+                            Text('Live Preview',
+                              style: TextStyle(fontSize: 13, color: const Color(0xFF1565C0), fontWeight: FontWeight.w500)),
+                            const Spacer(),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Calculated: ${_fmt.format(_previewAmount)}',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1565C0)),
+                                ),
+                                Text(
+                                  'Based on standard base salary',
+                                  style: TextStyle(fontSize: 11, color: const Color(0xFF1565C0).withValues(alpha: 0.65)),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                      Switch(
-                        value: _isActive,
-                        onChanged: (v) => setState(() => _isActive = v),
+                      const SizedBox(height: 16),
+
+                      // Freeze Settings
+                      Text('Freeze Settings', style: Theme.of(context).textTheme.labelMedium),
+                      const SizedBox(height: 10),
+                      _RadioOption(
+                        label: 'Not Frozen',
+                        selected: _freezeMode == 'not_frozen',
+                        onTap: () => setState(() => _freezeMode = 'not_frozen'),
+                        cs: cs,
                       ),
+                      const SizedBox(height: 8),
+                      _RadioOption(
+                        label: 'Freeze on Amount',
+                        selected: _freezeMode == 'frozen_on_amount',
+                        onTap: () => setState(() => _freezeMode = 'frozen_on_amount'),
+                        cs: cs,
+                      ),
+                      const SizedBox(height: 8),
+                      _RadioOption(
+                        label: 'Freeze on Base',
+                        selected: _freezeMode == 'frozen_on_base',
+                        onTap: () => setState(() => _freezeMode = 'frozen_on_base'),
+                        cs: cs,
+                      ),
+                      const SizedBox(height: 20),
                     ],
                   ),
+                ),
 
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 16),
-
-                  Row(
+                // ── Footer buttons ───────────────────────────────────────
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       OutlinedButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                          side: BorderSide(color: cs.outlineVariant),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(fontSize: 13)),
                       ),
                       const SizedBox(width: 12),
                       FilledButton.icon(
                         onPressed: _saving ? null : _save,
-                        icon:
-                            _saving
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : const Icon(Icons.save_outlined, size: 18),
-                        label: Text(_saving ? 'Saving…' : 'Save'),
+                        icon: _saving
+                            ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Icon(_isEdit ? Icons.check : Icons.add, size: 17),
+                        label: Text(
+                          _saving ? 'Saving…' : saveLabel,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1B2235),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
-
-  Widget _label(BuildContext context, String text) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelMedium,
-  );
 }
 
-// ── Value type toggle ─────────────────────────────────────────────────────────
+// ── Type toggle button ────────────────────────────────────────────────────────
 
-class _ValueTypeToggle extends StatelessWidget {
-  final String selected;
-  final ValueChanged<String> onChanged;
-  final ColorScheme cs;
-
-  const _ValueTypeToggle({
-    required this.selected,
-    required this.onChanged,
-    required this.cs,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _Chip(
-          label: 'Percentage %',
-          icon: Icons.percent,
-          selected: selected == 'percentage',
-          onTap: () => onChanged('percentage'),
-          cs: cs,
-        ),
-        const SizedBox(width: 10),
-        _Chip(
-          label: 'Fixed Amount',
-          icon: Icons.attach_money,
-          selected: selected == 'fixed',
-          onTap: () => onChanged('fixed'),
-          cs: cs,
-        ),
-      ],
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
+class _TypeBtn extends StatelessWidget {
   final String label;
-  final IconData icon;
   final bool selected;
   final VoidCallback onTap;
   final ColorScheme cs;
-
-  const _Chip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-    required this.cs,
-  });
+  const _TypeBtn({required this.label, required this.selected, required this.onTap, required this.cs});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+          color: selected ? cs.primary.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: selected ? cs.primary : cs.outlineVariant,
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.5),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.7),
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.6),
+          ),
         ),
       ),
     );
   }
 }
 
-// ── Freeze mode selector ──────────────────────────────────────────────────────
+// ── Radio option ──────────────────────────────────────────────────────────────
 
-class _FreezeModeSelector extends StatelessWidget {
-  final String selected;
-  final double previewAmount;
-  final double baseSalary;
-  final ValueChanged<String> onChanged;
-  final ColorScheme cs;
-
-  const _FreezeModeSelector({
-    required this.selected,
-    required this.previewAmount,
-    required this.baseSalary,
-    required this.onChanged,
-    required this.cs,
-  });
-
-  static final _fmt = NumberFormat.currency(
-    locale: 'en_PK',
-    symbol: 'PKR ',
-    decimalDigits: 0,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _FreezeOption(
-          value: 'not_frozen',
-          selected: selected,
-          icon: Icons.lock_open_outlined,
-          iconColor: const Color(0xFF2E7D32),
-          title: 'Not Frozen',
-          subtitle: 'Recalculates automatically when base salary changes',
-          onTap: () => onChanged('not_frozen'),
-          cs: cs,
-        ),
-        const SizedBox(height: 8),
-        _FreezeOption(
-          value: 'frozen_on_amount',
-          selected: selected,
-          icon: Icons.ac_unit,
-          iconColor: Colors.blue,
-          title: 'Freeze on Amount',
-          subtitle: selected == 'frozen_on_amount'
-              ? 'Will lock at: ${_fmt.format(previewAmount)}'
-              : 'Locks the current calculated amount permanently',
-          preview:
-              selected == 'frozen_on_amount'
-                  ? '${_fmt.format(previewAmount)} will be locked'
-                  : null,
-          onTap: () => onChanged('frozen_on_amount'),
-          cs: cs,
-        ),
-        const SizedBox(height: 8),
-        _FreezeOption(
-          value: 'frozen_on_base',
-          selected: selected,
-          icon: Icons.ac_unit,
-          iconColor: Colors.indigo,
-          title: 'Freeze on Base',
-          subtitle: selected == 'frozen_on_base'
-              ? 'Will lock base at: ${_fmt.format(baseSalary)}'
-              : 'Locks the percentage against the current base salary',
-          preview:
-              selected == 'frozen_on_base'
-                  ? 'Percentage applied to frozen base ${_fmt.format(baseSalary)}'
-                  : null,
-          onTap: () => onChanged('frozen_on_base'),
-          cs: cs,
-        ),
-      ],
-    );
-  }
-}
-
-class _FreezeOption extends StatelessWidget {
-  final String value;
-  final String selected;
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String? preview;
+class _RadioOption extends StatelessWidget {
+  final String label;
+  final bool selected;
   final VoidCallback onTap;
   final ColorScheme cs;
-
-  const _FreezeOption({
-    required this.value,
-    required this.selected,
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    this.preview,
-    required this.onTap,
-    required this.cs,
-  });
-
-  bool get _isSelected => value == selected;
-  bool get _isFrozen => value != 'not_frozen';
+  const _RadioOption({required this.label, required this.selected, required this.onTap, required this.cs});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color:
-              _isSelected
-                  ? (_isFrozen
-                      ? Colors.blue.withValues(alpha: 0.06)
-                      : cs.primaryContainer.withValues(alpha: 0.5))
-                  : cs.surfaceContainerHighest.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color:
-                _isSelected
-                    ? (_isFrozen ? Colors.blue.withValues(alpha: 0.5) : cs.primary)
-                    : cs.outlineVariant.withValues(alpha: 0.5),
-            width: _isSelected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: _isSelected ? iconColor : cs.onSurface.withValues(alpha: 0.35),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color:
-                          _isSelected
-                              ? (_isFrozen ? Colors.blue.shade700 : cs.primary)
-                              : cs.onSurface,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.55),
-                    ),
-                  ),
-                  if (_isSelected && preview != null) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: iconColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        preview!,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: iconColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+      borderRadius: BorderRadius.circular(6),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: 18,
+            height: 18,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.35),
+                width: selected ? 5 : 2,
               ),
+              color: Colors.transparent,
             ),
-            Icon(
-              _isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 20,
-              color: _isSelected
-                  ? (_isFrozen ? Colors.blue : cs.primary)
-                  : cs.onSurface.withValues(alpha: 0.35),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              color: selected ? cs.onSurface : cs.onSurface.withValues(alpha: 0.7),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

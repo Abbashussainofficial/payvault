@@ -5,12 +5,15 @@ class PayrollComponent {
   final String? code;
   final String type; // 'allowance' or 'deduction'
   final double amount;
+  // 'regular' or 'other' for pedo allowances; null otherwise
+  final String? section;
 
   const PayrollComponent({
     required this.name,
     this.code,
     required this.type,
     required this.amount,
+    this.section,
   });
 
   Map<String, dynamic> toJson() => {
@@ -18,6 +21,7 @@ class PayrollComponent {
     'code': code,
     'type': type,
     'amount': amount,
+    if (section != null) 'section': section,
   };
 
   static PayrollComponent fromJson(Map<String, dynamic> j) => PayrollComponent(
@@ -25,6 +29,7 @@ class PayrollComponent {
     code: j['code'] as String?,
     type: j['type'] as String,
     amount: (j['amount'] as num).toDouble(),
+    section: j['section'] as String?,
   );
 
   static List<PayrollComponent> parseSnapshot(String jsonStr) {

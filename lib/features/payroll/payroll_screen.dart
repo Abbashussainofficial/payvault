@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/database/database.dart';
 import '../../core/utils/payroll_snapshot.dart';
 import '../../core/utils/salary_calculator.dart';
+import '../employees/employee_detail_screen.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -13,25 +14,19 @@ class _EmpRow {
   final PayrollRecord? record;
   final List<SalaryComponent> components;
 
-  const _EmpRow({
-    required this.employee,
-    this.record,
-    required this.components,
-  });
+  const _EmpRow({required this.employee, this.record, required this.components});
 
   bool get isProcessed => record != null;
   bool get isLocked => record?.isLocked ?? false;
+  bool get isSelectable => !isLocked;
 
   double get baseSalary => record?.baseSalary ?? employee.baseSalary;
   double get totalAllowances =>
-      record?.totalAllowances ??
-      SalaryCalculator.totalAllowances(components, employee.baseSalary);
+      record?.totalAllowances ?? SalaryCalculator.totalAllowances(components, employee.baseSalary);
   double get totalDeductions =>
-      record?.totalDeductions ??
-      SalaryCalculator.totalDeductions(components, employee.baseSalary);
+      record?.totalDeductions ?? SalaryCalculator.totalDeductions(components, employee.baseSalary);
   double get netSalary =>
-      record?.netSalary ??
-      SalaryCalculator.net(employee.baseSalary, components, components);
+      record?.netSalary ?? SalaryCalculator.net(employee.baseSalary, components, components);
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -53,22 +48,16 @@ class _PayrollScreenState extends State<PayrollScreen> {
   bool _loading = true;
   bool _processing = false;
 
-  static const _catLabels = {
-    'pedo': 'PEDO Employees',
-    'security': 'Security Guards',
-    'alfajar': 'Al Fajar',
-  };
+  // per-employee selection (only selectable rows can be in here)
+  final Set<int> _selectedIds = {};
 
   static const _monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
-  final _currency = NumberFormat.currency(
-    locale: 'en_PK',
-    symbol: 'PKR ',
-    decimalDigits: 0,
-  );
+  final _currency = NumberFormat.currency(locale: 'en_PK', symbol: 'PKR ', decimalDigits: 0);
+  final _currencyShort = NumberFormat.compactCurrency(locale: 'en_PK', symbol: 'PKR ', decimalDigits: 1);
 
   @override
   void initState() {
@@ -82,124 +71,110 @@ class _PayrollScreenState extends State<PayrollScreen> {
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      final employees = await _db.employeesDao
-          .getEmployeesByCategory(widget.category);
-      final records = await _db.payrollRecordsDao
-          .getRecordsByMonthYear(_month, _year);
+      final employees = await _db.employeesDao.getEmployeesByCategory(widget.category);
+      final records = await _db.payrollRecordsDao.getRecordsByMonthYear(_month, _year);
       final recordMap = {for (final r in records) r.employeeId: r};
 
       final rows = <_EmpRow>[];
       for (final emp in employees) {
-        final comps = await _db.salaryComponentsDao
-            .getComponentsByEmployee(emp.id);
-        rows.add(_EmpRow(
-          employee: emp,
-          record: recordMap[emp.id],
-          components: comps,
-        ));
+        final comps = await _db.salaryComponentsDao.getComponentsByEmployee(emp.id);
+        rows.add(_EmpRow(employee: emp, record: recordMap[emp.id], components: comps));
       }
-      if (mounted) setState(() { _rows = rows; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+          // Keep only selections that still exist and are selectable
+          _selectedIds.removeWhere((id) {
+            final row = rows.where((r) => r.employee.id == id).firstOrNull;
+            return row == null || !row.isSelectable;
+          });
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  bool get _isLocked =>
-      _rows.isNotEmpty && _rows.every((r) => r.isLocked);
-  bool get _isProcessed =>
-      _rows.isNotEmpty && _rows.every((r) => r.isProcessed);
+  // ── Selection helpers ──────────────────────────────────────────────────────
 
-  void _shiftMonth(int delta) {
-    var m = _month + delta;
-    var y = _year;
-    if (m > 12) { m = 1; y++; }
-    if (m < 1)  { m = 12; y--; }
-    setState(() { _month = m; _year = y; });
-    _loadData();
+  List<_EmpRow> get _selectableRows => _rows.where((r) => r.isSelectable).toList();
+  List<_EmpRow> get _selectedRows =>
+      _rows.where((r) => _selectedIds.contains(r.employee.id) && r.isSelectable).toList();
+
+  bool get _allSelectableSelected {
+    final sel = _selectableRows;
+    return sel.isNotEmpty && sel.every((r) => _selectedIds.contains(r.employee.id));
   }
 
-  Future<void> _processPayroll() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Process Payroll'),
-        content: Text(
-          'Process and lock payroll for ${_monthNames[_month - 1]} $_year?\n\n'
-          'Salary records for all ${_rows.length} employees will be saved '
-          'and cannot be changed afterwards.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Process & Lock'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
+  void _toggleSelectAll(bool? val) {
+    setState(() {
+      if (val == true) {
+        _selectedIds.addAll(_selectableRows.map((r) => r.employee.id));
+      } else {
+        _selectedIds.removeAll(_selectableRows.map((r) => r.employee.id));
+      }
+    });
+  }
 
+  void _toggleRow(int empId, bool? val) {
+    setState(() {
+      if (val == true) {
+        _selectedIds.add(empId);
+      } else {
+        _selectedIds.remove(empId);
+      }
+    });
+  }
+
+  // ── Processing ─────────────────────────────────────────────────────────────
+
+  Future<void> _processRows(List<_EmpRow> rows) async {
+    if (rows.isEmpty) return;
     setState(() => _processing = true);
     try {
       final now = DateTime.now().toIso8601String();
-      for (final row in _rows) {
-        if (row.isProcessed) continue;
+      for (final row in rows) {
+        if (row.isLocked) continue;
         final emp = row.employee;
         final comps = row.components;
         final base = emp.baseSalary;
-
-        final activeAllow = comps
-            .where((c) => c.isActive && c.componentType == 'allowance')
-            .toList();
-        final activeDeduct = comps
-            .where((c) => c.isActive && c.componentType == 'deduction')
-            .toList();
-
-        final totalAllow =
-            SalaryCalculator.totalAllowances(comps, base);
-        final totalDeduct =
-            SalaryCalculator.totalDeductions(comps, base);
+        final activeAllow = comps.where((c) => c.isActive && c.componentType == 'allowance').toList();
+        final activeDeduct = comps.where((c) => c.isActive && c.componentType == 'deduction').toList();
+        final totalAllow = SalaryCalculator.totalAllowances(comps, base);
+        final totalDeduct = SalaryCalculator.totalDeductions(comps, base);
         final net = SalaryCalculator.net(base, comps, comps);
 
         final snapshot = [
           ...activeAllow.map((c) => PayrollComponent(
-            name: c.name,
-            code: c.classificationCode,
-            type: 'allowance',
+            name: c.name, code: c.classificationCode, type: 'allowance',
+            section: c.allowanceSection,
             amount: SalaryCalculator.calculateComponent(c, base),
           )),
           ...activeDeduct.map((c) => PayrollComponent(
-            name: c.name,
-            code: c.classificationCode,
-            type: 'deduction',
+            name: c.name, code: c.classificationCode, type: 'deduction',
             amount: SalaryCalculator.calculateComponent(c, base),
           )),
         ];
 
-        await _db.payrollRecordsDao.insertRecord(
-          PayrollRecordsCompanion(
-            employeeId: Value(emp.id),
-            month: Value(_month),
-            year: Value(_year),
-            baseSalary: Value(base),
-            totalAllowances: Value(totalAllow),
-            totalDeductions: Value(totalDeduct),
-            netSalary: Value(net),
-            salarySnapshot: Value(PayrollComponent.encodeSnapshot(snapshot)),
-            isLocked: const Value(true),
-            processedAt: Value(now),
-          ),
-        );
+        await _db.payrollRecordsDao.upsertRecord(PayrollRecordsCompanion(
+          employeeId: Value(emp.id),
+          month: Value(_month),
+          year: Value(_year),
+          baseSalary: Value(base),
+          totalAllowances: Value(totalAllow),
+          totalDeductions: Value(totalDeduct),
+          netSalary: Value(net),
+          salarySnapshot: Value(PayrollComponent.encodeSnapshot(snapshot)),
+          isLocked: const Value(true),
+          processedAt: Value(now),
+        ));
       }
+      _selectedIds.clear();
       await _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            'Payroll processed for ${_monthNames[_month - 1]} $_year',
-          ),
+          content: Text('Processed ${rows.length} employee${rows.length > 1 ? 's' : ''} for ${_monthNames[_month - 1]} $_year'),
           backgroundColor: Colors.green.shade700,
         ));
       }
@@ -214,35 +189,193 @@ class _PayrollScreenState extends State<PayrollScreen> {
     }
   }
 
+  Future<void> _processSelected() async {
+    final toProcess = _selectedRows.where((r) => !r.isLocked).toList();
+    if (toProcess.isEmpty) return;
+
+    if (toProcess.length > 1) {
+      final names = toProcess.map((r) => '• ${r.employee.fullName}').join('\n');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm Process Payroll'),
+          content: Text(
+            'Lock payroll for ${_monthNames[_month - 1]} $_year for:\n\n$names\n\n'
+            'Records will be saved and cannot be changed without unlocking.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Process & Lock')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    await _processRows(toProcess);
+  }
+
+  Future<void> _processAllPending() async {
+    final pending = _rows.where((r) => !r.isLocked).toList();
+    if (pending.isEmpty) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Process All Pending'),
+        content: Text(
+          'Process and lock payroll for ${pending.length} pending employee${pending.length > 1 ? 's' : ''} '
+          'for ${_monthNames[_month - 1]} $_year?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Process All')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _processRows(pending);
+  }
+
+  // ── Unlock ─────────────────────────────────────────────────────────────────
+
+  Future<void> _unlockEmployee(_EmpRow row) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unlock Payroll'),
+        content: Text(
+          'Unlock ${row.employee.fullName}\'s ${_monthNames[_month - 1]} $_year payroll?\n\n'
+          'This allows reprocessing with updated salary data.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFED8936)),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _db.payrollRecordsDao.unlockRecord(row.record!.id);
+    await _loadData();
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final totalNet =
-        _rows.fold(0.0, (s, r) => s + r.netSalary);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final processedCount = _rows.where((r) => r.isLocked).length;
+    final pendingCount = _rows.where((r) => !r.isLocked).length;
+    final totalNet = _rows.where((r) => r.isLocked).fold(0.0, (s, r) => s + r.netSalary);
+    final totalDeduct = _rows.fold(0.0, (s, r) => s + r.totalDeductions);
 
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF5F7FA),
       body: Column(
         children: [
-          _buildHeader(cs),
-          const Divider(height: 1),
+          // ── Header ─────────────────────────────────────────────────────────
+          Container(
+            color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 14),
+            child: Row(
+              children: [
+                Text('Payroll Processing',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(width: 10),
+                Container(width: 1, height: 20, color: cs.outlineVariant),
+                const SizedBox(width: 10),
+                Icon(Icons.calendar_today_outlined, size: 14, color: cs.onSurface.withValues(alpha: 0.5)),
+                const SizedBox(width: 5),
+                Text('${_monthNames[_month - 1]} $_year',
+                  style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w500)),
+                const Spacer(),
+                Icon(Icons.access_time_outlined, size: 17, color: cs.onSurface.withValues(alpha: 0.45)),
+                const SizedBox(width: 14),
+                _adminChip(cs),
+              ],
+            ),
+          ),
+
+          // ── Controls ───────────────────────────────────────────────────────
+          Container(
+            color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
+            child: Row(
+              children: [
+                _MonthDropdown(month: _month, onChanged: (m) { setState(() => _month = m); _loadData(); },
+                  monthNames: _monthNames, cs: cs),
+                const SizedBox(width: 10),
+                _YearDropdown(year: _year, onChanged: (y) { setState(() => _year = y); _loadData(); }, cs: cs),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.filter_alt_outlined, size: 15),
+                  label: const Text('Filter Data', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    side: BorderSide(color: cs.outlineVariant),
+                    foregroundColor: cs.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Summary strip ──────────────────────────────────────────────────
+          Container(
+            color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Row(
+              children: [
+                _StatChip(icon: Icons.check_circle_outline, iconColor: const Color(0xFF27AE60),
+                  label: 'Processed', value: '$processedCount', isDark: isDark, cs: cs),
+                const SizedBox(width: 12),
+                _StatChip(icon: Icons.hourglass_empty_outlined, iconColor: const Color(0xFFED8936),
+                  label: 'Pending', value: '$pendingCount', isDark: isDark, cs: cs),
+                const SizedBox(width: 12),
+                _StatChip(icon: Icons.account_balance_wallet_outlined, iconColor: const Color(0xFF1565C0),
+                  label: 'Total Payroll This Month', value: _currencyShort.format(totalNet), isDark: isDark, cs: cs),
+                const SizedBox(width: 12),
+                _StatChip(icon: Icons.remove_circle_outline, iconColor: const Color(0xFFE53E3E),
+                  label: 'Total Deductions', value: _currencyShort.format(totalDeduct), isDark: isDark, cs: cs),
+              ],
+            ),
+          ),
+
+          Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+
+          // ── Table + sticky bottom ──────────────────────────────────────────
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _rows.isEmpty
                     ? Center(
-                        child: Text(
-                          'No employees in this category.',
-                          style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.45),
-                          ),
-                        ),
+                        child: Text('No employees in this category.',
+                          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.45))),
                       )
                     : Column(
                         children: [
-                          Expanded(child: _buildTable(cs)),
-                          _buildFooter(cs, totalNet),
+                          // Select-All bar
+                          _buildSelectAllBar(cs, isDark),
+                          Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
+
+                          // Table
+                          Expanded(child: _buildTable(cs, isDark)),
+
+                          // Action buttons (Process All / Process Selected Only)
+                          _buildActionButtons(cs, isDark, pendingCount),
+
+                          // Grand total
+                          _buildGrandTotal(cs, isDark, totalNet, totalDeduct),
+
+                          // Audit log
+                          _buildAuditLog(cs, isDark),
                         ],
                       ),
           ),
@@ -251,283 +384,550 @@ class _PayrollScreenState extends State<PayrollScreen> {
     );
   }
 
-  // ── Header ────────────────────────────────────────────────────────────────
+  // ── Select-All bar ─────────────────────────────────────────────────────────
 
-  Widget _buildHeader(ColorScheme cs) {
-    final label = _catLabels[widget.category] ?? widget.category;
-
-    Widget statusChip() {
-      if (_isLocked) {
-        return _Chip(
-          icon: Icons.lock,
-          label: 'Locked',
-          color: Colors.orange.shade700,
-        );
-      }
-      if (_isProcessed) {
-        return _Chip(
-          icon: Icons.check_circle_outline,
-          label: 'Processed',
-          color: Colors.green.shade700,
-        );
-      }
-      if (_rows.any((r) => r.isProcessed)) {
-        return _Chip(
-          icon: Icons.warning_amber_outlined,
-          label: 'Partial',
-          color: Colors.amber.shade700,
-        );
-      }
-      return _Chip(
-        icon: Icons.radio_button_unchecked,
-        label: 'Not Processed',
-        color: cs.onSurface.withValues(alpha: 0.45),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+  Widget _buildSelectAllBar(ColorScheme cs, bool isDark) {
+    final selectable = _selectableRows.length;
+    final selected = _selectedIds.length;
+    return Container(
+      color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Payroll',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.55),
-                ),
-              ),
-            ],
+          Checkbox(
+            tristate: true,
+            value: selectable == 0 ? false : (_allSelectableSelected ? true : (selected > 0 ? null : false)),
+            onChanged: selectable == 0 ? null : _toggleSelectAll,
+            visualDensity: VisualDensity.compact,
           ),
-          const SizedBox(width: 28),
-          // Month navigator
-          IconButton(
-            onPressed: () => _shiftMonth(-1),
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Previous month',
+          const SizedBox(width: 6),
+          Text(
+            '$selected of $selectable selected',
+            style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.65)),
           ),
-          SizedBox(
-            width: 160,
-            child: Text(
-              '${_monthNames[_month - 1]}  $_year',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          IconButton(
-            onPressed: () => _shiftMonth(1),
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Next month',
-          ),
-          const SizedBox(width: 12),
-          statusChip(),
-          const Spacer(),
-          if (!_isLocked && _rows.isNotEmpty)
-            FilledButton.icon(
-              onPressed: _processing ? null : _processPayroll,
-              icon: _processing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.play_arrow_outlined, size: 18),
-              label: Text(_isProcessed ? 'Re-Process' : 'Process Payroll'),
-            )
-          else if (_isLocked)
-            OutlinedButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.lock_outline, size: 16),
-              label: const Text('Locked'),
-            ),
         ],
       ),
     );
   }
 
-  // ── Table ─────────────────────────────────────────────────────────────────
+  // ── Table ──────────────────────────────────────────────────────────────────
 
-  Widget _col(int flex, Widget child, {bool numeric = false}) => Expanded(
-    flex: flex,
-    child: Align(
-      alignment: numeric ? Alignment.centerRight : Alignment.centerLeft,
-      child: child,
-    ),
-  );
-
-  Widget _buildTable(ColorScheme cs) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final headerBg = isDark ? cs.surfaceContainerHighest : cs.surfaceContainerLowest;
-    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontWeight: FontWeight.w700,
-      color: cs.onSurface.withValues(alpha: 0.7),
-    );
+  Widget _buildTable(ColorScheme cs, bool isDark) {
+    final labelStyle = TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8,
+      color: cs.onSurface.withValues(alpha: 0.5));
 
     return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header
           Container(
-            color: headerBg,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF8FAFC),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 11),
             child: Row(
               children: [
-                _col(1, Text('#', style: labelStyle)),
-                _col(3, Text('Employee ID', style: labelStyle)),
-                _col(4, Text('Name', style: labelStyle)),
-                _col(3, Text('Base Salary', style: labelStyle), numeric: true),
-                _col(3, Text('Allowances', style: labelStyle), numeric: true),
-                _col(3, Text('Deductions', style: labelStyle), numeric: true),
-                _col(3, Text('Net Salary', style: labelStyle), numeric: true),
-                _col(2, Text('Status', style: labelStyle)),
+                const SizedBox(width: 36), // checkbox placeholder
+                Expanded(flex: 9, child: Text('EMPLOYEE ID', style: labelStyle)),
+                Expanded(flex: 15, child: Text('EMPLOYEE', style: labelStyle)),
+                Expanded(flex: 10, child: Text('BASIC SALARY', style: labelStyle, textAlign: TextAlign.right)),
+                Expanded(flex: 10, child: Text('ALLOWANCES', style: labelStyle, textAlign: TextAlign.right)),
+                Expanded(flex: 10, child: Text('DEDUCTIONS', style: labelStyle, textAlign: TextAlign.right)),
+                Expanded(flex: 13, child: Text('NET SALARY', style: labelStyle, textAlign: TextAlign.right)),
+                Expanded(flex: 8, child: Text('ACTION', style: labelStyle, textAlign: TextAlign.center)),
               ],
             ),
           ),
-          const Divider(height: 1),
-          // Data rows
-          ..._rows.asMap().entries.map((entry) {
-            final i = entry.key;
-            final row = entry.value;
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _col(1, Text(
-                        '${i + 1}',
-                        style: TextStyle(color: cs.onSurface.withValues(alpha: 0.45), fontSize: 12),
-                      )),
-                      _col(3, Text(
-                        row.employee.employeeId,
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                      )),
-                      _col(4, Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(row.employee.fullName, style: const TextStyle(fontWeight: FontWeight.w500)),
-                          Text(
-                            row.employee.designation,
-                            style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5)),
-                          ),
-                        ],
-                      )),
-                      _col(3, Text(_currency.format(row.baseSalary)), numeric: true),
-                      _col(3, Text(
-                        _currency.format(row.totalAllowances),
-                        style: TextStyle(color: Colors.green.shade700),
-                      ), numeric: true),
-                      _col(3, Text(
-                        _currency.format(row.totalDeductions),
-                        style: TextStyle(color: Colors.red.shade600),
-                      ), numeric: true),
-                      _col(3, Text(
-                        _currency.format(row.netSalary),
-                        style: TextStyle(fontWeight: FontWeight.w700, color: cs.primary),
-                      ), numeric: true),
-                      _col(2, _statusCell(row, cs)),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-              ],
-            );
-          }),
+          Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.35)),
+
+          ..._rows.map((row) => _buildTableRow(row, cs, isDark)),
         ],
       ),
     );
   }
 
-  Widget _statusCell(_EmpRow row, ColorScheme cs) {
-    if (row.isLocked) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.lock, size: 14, color: Colors.orange.shade700),
-        const SizedBox(width: 4),
-        Text(
-          'Locked',
-          style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
-        ),
-      ]);
+  Widget _buildTableRow(_EmpRow row, ColorScheme cs, bool isDark) {
+    final isSelected = _selectedIds.contains(row.employee.id);
+    final isLocked = row.isLocked;
+
+    // For locked rows, show the date the record was processed
+    String? processedDate;
+    if (isLocked && row.record?.processedAt != null) {
+      try {
+        final dt = DateTime.parse(row.record!.processedAt);
+        processedDate = DateFormat('d MMM').format(dt);
+      } catch (_) {}
     }
-    if (row.isProcessed) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.check_circle_outline, size: 14, color: Colors.green.shade700),
-        const SizedBox(width: 4),
-        Text(
-          'Processed',
-          style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+
+    return Column(
+      children: [
+        InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => EmployeeDetailScreen(employee: row.employee, category: widget.category),
+          )),
+          hoverColor: cs.primary.withValues(alpha: 0.04),
+          child: Container(
+            color: isSelected && !isLocked
+                ? cs.primary.withValues(alpha: 0.05)
+                : null,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Checkbox
+                SizedBox(
+                  width: 36,
+                  child: Checkbox(
+                    value: isLocked ? false : isSelected,
+                    onChanged: isLocked ? null : (v) => _toggleRow(row.employee.id, v),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+
+                // Employee ID
+                Expanded(
+                  flex: 9,
+                  child: Text(row.employee.employeeId,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: Color(0xFF1565C0), fontFamily: 'monospace')),
+                ),
+
+                // Name + designation
+                Expanded(
+                  flex: 15,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(row.employee.fullName,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      Text(row.employee.designation,
+                        style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: 0.5))),
+                    ],
+                  ),
+                ),
+
+                // Basic salary
+                Expanded(flex: 10, child: Text(_currency.format(row.baseSalary),
+                  style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.75)),
+                  textAlign: TextAlign.right)),
+
+                // Allowances
+                Expanded(flex: 10, child: Text(_currency.format(row.totalAllowances),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF27AE60), fontWeight: FontWeight.w500),
+                  textAlign: TextAlign.right)),
+
+                // Deductions
+                Expanded(flex: 10, child: Text(_currency.format(row.totalDeductions),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFE53E3E), fontWeight: FontWeight.w500),
+                  textAlign: TextAlign.right)),
+
+                // Net salary with status indicator
+                Expanded(
+                  flex: 13,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(_currency.format(row.netSalary),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.primary),
+                          textAlign: TextAlign.right, overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 6),
+                      if (isLocked) ...[
+                        Icon(Icons.lock_outline, size: 12, color: const Color(0xFFED8936).withValues(alpha: 0.85)),
+                        if (processedDate != null) ...[
+                          const SizedBox(width: 3),
+                          Text(processedDate, style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.45))),
+                        ],
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: cs.onSurface.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('Pending',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500,
+                              color: cs.onSurface.withValues(alpha: 0.5))),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Action (unlock)
+                Expanded(
+                  flex: 8,
+                  child: Center(
+                    child: isLocked
+                        ? TextButton(
+                            onPressed: () => _unlockEmployee(row),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFFED8936),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: Size.zero,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.lock_open_outlined, size: 13),
+                                SizedBox(width: 4),
+                                Text('Unlock', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ]);
-    }
-    return Text(
-      '—',
-      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.35)),
+        Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.25)),
+      ],
     );
   }
 
-  // ── Footer ────────────────────────────────────────────────────────────────
+  // ── Action buttons ─────────────────────────────────────────────────────────
 
-  Widget _buildFooter(ColorScheme cs, double totalNet) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final totalGross = _rows.fold(
-      0.0,
-      (s, r) => s + r.baseSalary + r.totalAllowances,
-    );
-    final totalDeduct = _rows.fold(0.0, (s, r) => s + r.totalDeductions);
-
+  Widget _buildActionButtons(ColorScheme cs, bool isDark, int pendingCount) {
+    final selectedCount = _selectedRows.length;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       decoration: BoxDecoration(
-        color: isDark
-            ? cs.surfaceContainerHighest
-            : cs.surfaceContainerLowest,
+        color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF8FAFC),
         border: Border(
-          top: BorderSide(color: cs.outlineVariant, width: 1),
+          top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3)),
+          bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3)),
         ),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text(
-            '${_rows.length} employees  ·  ${_monthNames[_month - 1]} $_year',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurface.withValues(alpha: 0.5),
+          FilledButton.icon(
+            onPressed: (selectedCount == 0 || _processing) ? null : _processSelected,
+            icon: const Icon(Icons.checklist_outlined, size: 16),
+            label: Text(
+              selectedCount > 0
+                  ? 'Process Selected Only ($selectedCount)'
+                  : 'Process Selected Only',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1B2235),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFF1B2235).withValues(alpha: 0.3),
+              disabledForegroundColor: Colors.white.withValues(alpha: 0.45),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: (_processing || _loading || pendingCount == 0) ? null : _processAllPending,
+            icon: _processing
+                ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.play_circle_outlined, size: 17),
+            label: Text(
+              pendingCount > 0 ? 'Process All ($pendingCount)' : 'Process All',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1B2235),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFF1B2235).withValues(alpha: 0.3),
+              disabledForegroundColor: Colors.white.withValues(alpha: 0.45),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Grand total ────────────────────────────────────────────────────────────
+
+  Widget _buildGrandTotal(ColorScheme cs, bool isDark, double totalNet, double totalDeduct) {
+    final totalBase = _rows.fold(0.0, (s, r) => s + r.baseSalary);
+    final totalAllow = _rows.fold(0.0, (s, r) => s + r.totalAllowances);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF0F4F8),
+        border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4))),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 36),
+          const Expanded(flex: 9, child: SizedBox()),
+          Expanded(
+            flex: 15,
+            child: Text('Grand Totals',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurface)),
+          ),
+          Expanded(flex: 10, child: Text(_currency.format(totalBase),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: cs.onSurface), textAlign: TextAlign.right)),
+          Expanded(flex: 10, child: Text(_currency.format(totalAllow),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF27AE60)), textAlign: TextAlign.right)),
+          Expanded(flex: 10, child: Text(_currency.format(totalDeduct),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFE53E3E)), textAlign: TextAlign.right)),
+          Expanded(flex: 13, child: Text(_currency.format(totalNet),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: cs.primary), textAlign: TextAlign.right)),
+          Expanded(flex: 8, child: Center(
+            child: Icon(Icons.verified_outlined, size: 18, color: cs.primary.withValues(alpha: 0.7)),
+          )),
+        ],
+      ),
+    );
+  }
+
+  // ── Audit log ──────────────────────────────────────────────────────────────
+
+  Widget _buildAuditLog(ColorScheme cs, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Audit Log Readiness',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 3),
+              Text(
+                'All employee data for ${_monthNames[_month - 1]} $_year has been validated.\n'
+                'You can proceed with payroll processing to generate bank transfer sheets.',
+                style: TextStyle(fontSize: 11, color: cs.onSurface.withValues(alpha: 0.55), height: 1.45),
+              ),
+            ],
+          ),
           const Spacer(),
-          _FooterItem(
-            label: 'Total Gross',
-            value: _currency.format(totalGross),
-            color: cs.onSurface.withValues(alpha: 0.7),
+          OutlinedButton.icon(
+            onPressed: _showAllowancesDialog,
+            icon: const Icon(Icons.list_alt_outlined, size: 14),
+            label: const Text('Review Allowances', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              side: BorderSide(color: cs.outlineVariant),
+              foregroundColor: cs.onSurface.withValues(alpha: 0.7),
+            ),
           ),
-          const SizedBox(width: 32),
-          _FooterItem(
-            label: 'Total Deductions',
-            value: _currency.format(totalDeduct),
-            color: Colors.red.shade600,
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _showDeductionsAuditDialog,
+            icon: const Icon(Icons.fact_check_outlined, size: 14),
+            label: const Text('View Deductions Audit', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              side: BorderSide(color: cs.outlineVariant),
+              foregroundColor: cs.onSurface.withValues(alpha: 0.7),
+            ),
           ),
-          const SizedBox(width: 32),
-          _FooterItem(
-            label: 'Total Net Payroll',
-            value: _currency.format(totalNet),
-            color: cs.primary,
-            large: true,
+        ],
+      ),
+    );
+  }
+
+  // ── Dialogs ────────────────────────────────────────────────────────────────
+
+  void _showAllowancesDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final fmt = _currency;
+        final labelStyle = TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8,
+          color: cs.onSurface.withValues(alpha: 0.5));
+
+        final items = <(String, String, String, double)>[];
+        double grandTotal = 0;
+        for (final row in _rows) {
+          for (final c in row.components) {
+            if (!c.isActive || c.componentType != 'allowance') continue;
+            final amt = SalaryCalculator.calculateComponent(c, row.baseSalary);
+            items.add((row.employee.fullName, row.employee.employeeId, c.name, amt));
+            grandTotal += amt;
+          }
+        }
+
+        return Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640, maxHeight: 520),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 8, 14),
+                  child: Row(children: [
+                    Icon(Icons.list_alt_outlined, size: 20, color: cs.primary),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Allowances Review — ${_monthNames[_month - 1]} $_year',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+                    IconButton(onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 18), visualDensity: VisualDensity.compact),
+                  ]),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Row(children: [
+                    Expanded(flex: 5, child: Text('EMPLOYEE', style: labelStyle)),
+                    Expanded(flex: 5, child: Text('ALLOWANCE', style: labelStyle)),
+                    Expanded(flex: 3, child: Text('AMOUNT', style: labelStyle, textAlign: TextAlign.right)),
+                  ]),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.25)),
+                Expanded(
+                  child: items.isEmpty
+                      ? Center(child: Text('No allowances configured.',
+                          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.4))))
+                      : ListView.separated(
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) => Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.2)),
+                          itemBuilder: (_, i) {
+                            final (empName, empId, compName, amt) = items[i];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              child: Row(children: [
+                                Expanded(flex: 5, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(empName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                  Text(empId, style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.5))),
+                                ])),
+                                Expanded(flex: 5, child: Text(compName, style: const TextStyle(fontSize: 12))),
+                                Expanded(flex: 3, child: Text(fmt.format(amt),
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF27AE60)),
+                                  textAlign: TextAlign.right)),
+                              ]),
+                            );
+                          },
+                        ),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  child: Row(children: [
+                    const Text('Grand Total', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Text(fmt.format(grandTotal),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF27AE60))),
+                  ]),
+                ),
+              ],
+            ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showDeductionsAuditDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final fmt = _currency;
+        final labelStyle = TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8,
+          color: cs.onSurface.withValues(alpha: 0.5));
+
+        final items = <(String, String, String, double)>[];
+        double grandTotal = 0;
+        for (final row in _rows) {
+          for (final c in row.components) {
+            if (!c.isActive || c.componentType != 'deduction') continue;
+            final amt = SalaryCalculator.calculateComponent(c, row.baseSalary);
+            items.add((row.employee.fullName, row.employee.employeeId, c.name, amt));
+            grandTotal += amt;
+          }
+        }
+
+        return Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640, maxHeight: 520),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 8, 14),
+                  child: Row(children: [
+                    Icon(Icons.fact_check_outlined, size: 20, color: cs.error),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Deductions Audit — ${_monthNames[_month - 1]} $_year',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+                    IconButton(onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 18), visualDensity: VisualDensity.compact),
+                  ]),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Row(children: [
+                    Expanded(flex: 5, child: Text('EMPLOYEE', style: labelStyle)),
+                    Expanded(flex: 5, child: Text('DEDUCTION', style: labelStyle)),
+                    Expanded(flex: 3, child: Text('AMOUNT', style: labelStyle, textAlign: TextAlign.right)),
+                  ]),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.25)),
+                Expanded(
+                  child: items.isEmpty
+                      ? Center(child: Text('No deductions configured.',
+                          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.4))))
+                      : ListView.separated(
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) => Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.2)),
+                          itemBuilder: (_, i) {
+                            final (empName, empId, compName, amt) = items[i];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              child: Row(children: [
+                                Expanded(flex: 5, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(empName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                  Text(empId, style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.5))),
+                                ])),
+                                Expanded(flex: 5, child: Text(compName, style: const TextStyle(fontSize: 12))),
+                                Expanded(flex: 3, child: Text(fmt.format(amt),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.error),
+                                  textAlign: TextAlign.right)),
+                              ]),
+                            );
+                          },
+                        ),
+                ),
+                Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  child: Row(children: [
+                    const Text('Grand Total', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Text(fmt.format(grandTotal),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cs.error)),
+                  ]),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _adminChip(ColorScheme cs) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: const Color(0xFF1565C0),
+            child: const Text('AD', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 7),
+          Text('Admin User', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurface)),
         ],
       ),
     );
@@ -536,66 +936,106 @@ class _PayrollScreenState extends State<PayrollScreen> {
 
 // ── Helper widgets ────────────────────────────────────────────────────────────
 
-class _Chip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  const _Chip({required this.icon, required this.label, required this.color});
+class _MonthDropdown extends StatelessWidget {
+  final int month;
+  final ValueChanged<int> onChanged;
+  final List<String> monthNames;
+  final ColorScheme cs;
+  const _MonthDropdown({required this.month, required this.onChanged, required this.monthNames, required this.cs});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
-        ),
-      ]),
+      child: DropdownButton<int>(
+        value: month,
+        underline: const SizedBox.shrink(),
+        isDense: true,
+        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+        items: List.generate(12, (i) => i + 1).map((m) =>
+          DropdownMenuItem(value: m, child: Text(monthNames[m - 1])),
+        ).toList(),
+        onChanged: (v) { if (v != null) onChanged(v); },
+      ),
     );
   }
 }
 
-class _FooterItem extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  final bool large;
-  const _FooterItem({
-    required this.label,
-    required this.value,
-    required this.color,
-    this.large = false,
-  });
+class _YearDropdown extends StatelessWidget {
+  final int year;
+  final ValueChanged<int> onChanged;
+  final ColorScheme cs;
+  const _YearDropdown({required this.year, required this.onChanged, required this.cs});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-          ),
+    final currentYear = DateTime.now().year;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+      decoration: BoxDecoration(
+        border: Border.all(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButton<int>(
+        value: year,
+        underline: const SizedBox.shrink(),
+        isDense: true,
+        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+        items: List.generate(6, (i) => currentYear - 2 + i).map((y) =>
+          DropdownMenuItem(value: y, child: Text('$y')),
+        ).toList(),
+        onChanged: (v) { if (v != null) onChanged(v); },
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String value;
+  final bool isDark;
+  final ColorScheme cs;
+
+  const _StatChip({required this.icon, required this.iconColor, required this.label,
+    required this.value, required this.isDark, required this.cs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: large ? 16 : 13,
-            fontWeight: large ? FontWeight.w700 : FontWeight.w600,
-            color: color,
-          ),
+        child: Row(
+          children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, size: 18, color: iconColor),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: TextStyle(fontSize: 10, color: cs.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 1),
+                  Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: cs.onSurface), overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
