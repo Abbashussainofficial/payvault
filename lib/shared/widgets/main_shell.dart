@@ -8,6 +8,7 @@ import '../../features/employees/employee_list_screen.dart';
 import '../../features/payroll/payroll_screen.dart';
 import '../../features/printing/print_screen.dart';
 import '../../features/salary/salary_structure_screen.dart';
+import '../../features/salary/templates/template_list_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import 'sidebar.dart';
 
@@ -50,6 +51,7 @@ class _MainShellState extends State<MainShell> {
           'add' => EmployeeFormScreen(category: cat),
           'payroll' => PayrollScreen(category: cat),
           'reports' => PrintScreen(category: cat),
+          'templates' => const TemplateListScreen(),
           'salary' when _selectedEmployee != null => SalaryStructureScreen(
               employee: _selectedEmployee!,
               onBack: () => _setRoute(NavRoute.cat(cat, 'list')),

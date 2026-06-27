@@ -37,6 +37,10 @@ class Employees extends Table {
   TextColumn get category => text()();
   RealColumn get baseSalary => real().withDefault(const Constant(0.0))();
   TextColumn get createdAt => text()();
+  TextColumn get grossClaimCode => text().nullable()();
+  TextColumn get basicMonthCode => text().nullable()();
+  TextColumn get basicPayCode1 => text().nullable()();
+  TextColumn get basicPayCode2 => text().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [
@@ -79,6 +83,33 @@ class PayrollRecords extends Table {
   TextColumn get salarySnapshot => text()();
   BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
   TextColumn get processedAt => text()();
+}
+
+class SalaryTemplates extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get templateName => text()();
+  TextColumn get description => text().nullable()();
+  TextColumn get category => text().withDefault(const Constant('pedo'))();
+  TextColumn get createdAt => text()();
+  TextColumn get updatedAt => text()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {templateName},
+  ];
+}
+
+class SalaryTemplateItems extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get templateId => integer().references(SalaryTemplates, #id)();
+  TextColumn get name => text()();
+  TextColumn get componentType => text()(); // 'allowance' or 'deduction'
+  TextColumn get allowanceSection => text().nullable()(); // 'regular', 'other', null
+  TextColumn get valueType => text()(); // 'percentage' or 'fixed'
+  RealColumn get defaultValue => real()();
+  TextColumn get classificationCode => text().nullable()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
 }
 
 // ════════════════════════════════ DAOs ══════════════════════════════════════
@@ -238,7 +269,17 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
   /// the same (employeeId, month, year) thanks to the unique index added in
   /// schema version 2.
   Future<int> upsertRecord(PayrollRecordsCompanion record) =>
-      into(payrollRecords).insertOnConflictUpdate(record);
+      into(payrollRecords).insert(
+        record,
+        onConflict: DoUpdate(
+          (old) => record,
+          target: [
+            payrollRecords.employeeId,
+            payrollRecords.month,
+            payrollRecords.year,
+          ],
+        ),
+      );
 
   Future<int> insertRecord(PayrollRecordsCompanion record) =>
       into(payrollRecords).insert(record);
@@ -263,6 +304,47 @@ class PayrollRecordsDao extends DatabaseAccessor<AppDatabase>
   Future<List<PayrollRecord>> getAllRecords() => select(payrollRecords).get();
 }
 
+@DriftAccessor(tables: [SalaryTemplates, SalaryTemplateItems])
+class SalaryTemplatesDao extends DatabaseAccessor<AppDatabase>
+    with _$SalaryTemplatesDaoMixin {
+  SalaryTemplatesDao(super.db);
+
+  Future<List<SalaryTemplate>> getAllTemplates() =>
+      (select(salaryTemplates)
+            ..orderBy([(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]))
+          .get();
+
+  Future<SalaryTemplate?> getTemplateById(int id) =>
+      (select(salaryTemplates)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<int> insertTemplate(SalaryTemplatesCompanion t) =>
+      into(salaryTemplates).insert(t);
+
+  Future<bool> updateTemplate(SalaryTemplate t) =>
+      update(salaryTemplates).replace(t);
+
+  Future<int> deleteTemplate(int id) =>
+      (delete(salaryTemplates)..where((t) => t.id.equals(id))).go();
+
+  Future<List<SalaryTemplateItem>> getItemsByTemplate(int templateId) =>
+      (select(salaryTemplateItems)
+            ..where((t) => t.templateId.equals(templateId))
+            ..orderBy([(t) => OrderingTerm(expression: t.sortOrder)]))
+          .get();
+
+  Future<int> insertItem(SalaryTemplateItemsCompanion item) =>
+      into(salaryTemplateItems).insert(item);
+
+  Future<bool> updateItem(SalaryTemplateItem item) =>
+      update(salaryTemplateItems).replace(item);
+
+  Future<int> deleteItem(int id) =>
+      (delete(salaryTemplateItems)..where((t) => t.id.equals(id))).go();
+
+  Future<int> deleteItemsByTemplate(int templateId) =>
+      (delete(salaryTemplateItems)..where((t) => t.templateId.equals(templateId))).go();
+}
+
 // ════════════════════════════ DATABASE ══════════════════════════════════════
 
 QueryExecutor _openConnection() {
@@ -274,8 +356,8 @@ QueryExecutor _openConnection() {
 }
 
 @DriftDatabase(
-  tables: [AppSettings, Employees, SalaryComponents, PayrollRecords],
-  daos: [AppSettingsDao, EmployeesDao, SalaryComponentsDao, PayrollRecordsDao],
+  tables: [AppSettings, Employees, SalaryComponents, PayrollRecords, SalaryTemplates, SalaryTemplateItems],
+  daos: [AppSettingsDao, EmployeesDao, SalaryComponentsDao, PayrollRecordsDao, SalaryTemplatesDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase._() : super(_openConnection());
@@ -283,7 +365,7 @@ class AppDatabase extends _$AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -309,6 +391,22 @@ class AppDatabase extends _$AppDatabase {
           "UPDATE salary_components SET allowance_section = 'regular' "
           "WHERE component_type = 'allowance'",
         );
+      }
+      if (from < 4) {
+        await m.createTable(salaryTemplates);
+        await m.createTable(salaryTemplateItems);
+      }
+      if (from < 5) {
+        await m.addColumn(employees, employees.grossClaimCode);
+        // Remove any Gross Claim components stored as salary components (now auto-calculated)
+        await customStatement(
+          "DELETE FROM salary_components WHERE LOWER(name) LIKE '%gross claim%'",
+        );
+      }
+      if (from < 6) {
+        await m.addColumn(employees, employees.basicMonthCode);
+        await m.addColumn(employees, employees.basicPayCode1);
+        await m.addColumn(employees, employees.basicPayCode2);
       }
     },
     beforeOpen: (details) async {

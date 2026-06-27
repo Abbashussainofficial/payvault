@@ -9,6 +9,7 @@ import '../../core/database/database.dart';
 import '../backup/excel_export_service.dart';
 import 'pedo_payslip_preview.dart';
 import 'print_service.dart';
+import 'standard_payslip_preview.dart';
 
 class PrintScreen extends StatefulWidget {
   final String category;
@@ -635,16 +636,29 @@ class _PrintScreenState extends State<PrintScreen> {
   }
 
   Widget _previewOrPlaceholder(ColorScheme cs, bool isDark) {
-    // Live PEDO payslip preview when employee + record are available
-    if (!_bulkMode && widget.category == 'pedo' && _selectedEmployee != null) {
-      final rec = _recordMap[_selectedEmployee!.id];
-      if (rec != null) {
+    if (!_bulkMode && _selectedEmployee != null) {
+      final emp = _selectedEmployee!;
+      final rec = _recordMap[emp.id];
+
+      // PEDO: only show when a processed record exists
+      if (widget.category == 'pedo' && rec != null) {
         return PedoPayslipPreview.fromRecord(
-          employee: _selectedEmployee!,
+          employee: emp,
           record: rec,
           month: _month,
           year: _year,
           vNo: _vNoCtrl.text.trim(),
+        );
+      }
+
+      // Security / Al Fajar: always show live preview (DRAFT when no record)
+      if (widget.category == 'security' || widget.category == 'alfajar') {
+        return StandardPayslipPreview(
+          employee: emp,
+          month: _month,
+          year: _year,
+          category: widget.category,
+          record: rec,
         );
       }
     }
@@ -669,9 +683,7 @@ class _PrintScreenState extends State<PrintScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            widget.category == 'pedo'
-                ? 'Select a processed employee to see\nthe payslip preview here.'
-                : 'Select an employee and month,\nthen tap Print to PDF.',
+            'Select an employee to see\nthe payslip preview here.',
             style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.4)),
             textAlign: TextAlign.center,
           ),

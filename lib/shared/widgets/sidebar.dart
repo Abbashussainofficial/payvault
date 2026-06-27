@@ -65,10 +65,11 @@ class _SidebarState extends State<Sidebar> {
     _Cat('alfajar', 'Al Fajar', Icons.star_outline),
   ];
 
-  static const _subs = [
-    _Sub('Add Employee', Icons.person_add_outlined, 'add'),
-    _Sub('Payroll', Icons.payments_outlined, 'payroll'),
-    _Sub('Print & Reports', Icons.print_outlined, 'reports'),
+  List<_Sub> _subsForCat(String catId) => [
+    const _Sub('Add Employee', Icons.person_add_outlined, 'add'),
+    const _Sub('Payroll', Icons.payments_outlined, 'payroll'),
+    const _Sub('Print & Reports', Icons.print_outlined, 'reports'),
+    if (catId == 'pedo') const _Sub('Templates', Icons.description_outlined, 'templates'),
   ];
 
   @override
@@ -287,7 +288,7 @@ class _SidebarState extends State<Sidebar> {
           curve: Curves.easeOut,
           child: isExpanded
               ? Column(
-                  children: _subs.map((sub) {
+                  children: _subsForCat(cat.id).map((sub) {
                     final routeId = NavRoute.cat(cat.id, sub.section);
                     return _navItem(
                       ctx,

@@ -64,6 +64,28 @@ class PayrollRecordsDaoManager {
       );
 }
 
+mixin _$SalaryTemplatesDaoMixin on DatabaseAccessor<AppDatabase> {
+  $SalaryTemplatesTable get salaryTemplates => attachedDatabase.salaryTemplates;
+  $SalaryTemplateItemsTable get salaryTemplateItems =>
+      attachedDatabase.salaryTemplateItems;
+  SalaryTemplatesDaoManager get managers => SalaryTemplatesDaoManager(this);
+}
+
+class SalaryTemplatesDaoManager {
+  final _$SalaryTemplatesDaoMixin _db;
+  SalaryTemplatesDaoManager(this._db);
+  $$SalaryTemplatesTableTableManager get salaryTemplates =>
+      $$SalaryTemplatesTableTableManager(
+        _db.attachedDatabase,
+        _db.salaryTemplates,
+      );
+  $$SalaryTemplateItemsTableTableManager get salaryTemplateItems =>
+      $$SalaryTemplateItemsTableTableManager(
+        _db.attachedDatabase,
+        _db.salaryTemplateItems,
+      );
+}
+
 class $AppSettingsTable extends AppSettings
     with TableInfo<$AppSettingsTable, AppSetting> {
   @override
@@ -700,6 +722,50 @@ class $EmployeesTable extends Employees
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _grossClaimCodeMeta = const VerificationMeta(
+    'grossClaimCode',
+  );
+  @override
+  late final GeneratedColumn<String> grossClaimCode = GeneratedColumn<String>(
+    'gross_claim_code',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _basicMonthCodeMeta = const VerificationMeta(
+    'basicMonthCode',
+  );
+  @override
+  late final GeneratedColumn<String> basicMonthCode = GeneratedColumn<String>(
+    'basic_month_code',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _basicPayCode1Meta = const VerificationMeta(
+    'basicPayCode1',
+  );
+  @override
+  late final GeneratedColumn<String> basicPayCode1 = GeneratedColumn<String>(
+    'basic_pay_code1',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _basicPayCode2Meta = const VerificationMeta(
+    'basicPayCode2',
+  );
+  @override
+  late final GeneratedColumn<String> basicPayCode2 = GeneratedColumn<String>(
+    'basic_pay_code2',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -716,6 +782,10 @@ class $EmployeesTable extends Employees
     category,
     baseSalary,
     createdAt,
+    grossClaimCode,
+    basicMonthCode,
+    basicPayCode1,
+    basicPayCode2,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -838,6 +908,42 @@ class $EmployeesTable extends Employees
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('gross_claim_code')) {
+      context.handle(
+        _grossClaimCodeMeta,
+        grossClaimCode.isAcceptableOrUnknown(
+          data['gross_claim_code']!,
+          _grossClaimCodeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('basic_month_code')) {
+      context.handle(
+        _basicMonthCodeMeta,
+        basicMonthCode.isAcceptableOrUnknown(
+          data['basic_month_code']!,
+          _basicMonthCodeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('basic_pay_code1')) {
+      context.handle(
+        _basicPayCode1Meta,
+        basicPayCode1.isAcceptableOrUnknown(
+          data['basic_pay_code1']!,
+          _basicPayCode1Meta,
+        ),
+      );
+    }
+    if (data.containsKey('basic_pay_code2')) {
+      context.handle(
+        _basicPayCode2Meta,
+        basicPayCode2.isAcceptableOrUnknown(
+          data['basic_pay_code2']!,
+          _basicPayCode2Meta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -907,6 +1013,22 @@ class $EmployeesTable extends Employees
         DriftSqlType.string,
         data['${effectivePrefix}created_at'],
       )!,
+      grossClaimCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}gross_claim_code'],
+      ),
+      basicMonthCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}basic_month_code'],
+      ),
+      basicPayCode1: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}basic_pay_code1'],
+      ),
+      basicPayCode2: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}basic_pay_code2'],
+      ),
     );
   }
 
@@ -931,6 +1053,10 @@ class Employee extends DataClass implements Insertable<Employee> {
   final String category;
   final double baseSalary;
   final String createdAt;
+  final String? grossClaimCode;
+  final String? basicMonthCode;
+  final String? basicPayCode1;
+  final String? basicPayCode2;
   const Employee({
     required this.id,
     required this.employeeId,
@@ -946,6 +1072,10 @@ class Employee extends DataClass implements Insertable<Employee> {
     required this.category,
     required this.baseSalary,
     required this.createdAt,
+    this.grossClaimCode,
+    this.basicMonthCode,
+    this.basicPayCode1,
+    this.basicPayCode2,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -972,6 +1102,18 @@ class Employee extends DataClass implements Insertable<Employee> {
     map['category'] = Variable<String>(category);
     map['base_salary'] = Variable<double>(baseSalary);
     map['created_at'] = Variable<String>(createdAt);
+    if (!nullToAbsent || grossClaimCode != null) {
+      map['gross_claim_code'] = Variable<String>(grossClaimCode);
+    }
+    if (!nullToAbsent || basicMonthCode != null) {
+      map['basic_month_code'] = Variable<String>(basicMonthCode);
+    }
+    if (!nullToAbsent || basicPayCode1 != null) {
+      map['basic_pay_code1'] = Variable<String>(basicPayCode1);
+    }
+    if (!nullToAbsent || basicPayCode2 != null) {
+      map['basic_pay_code2'] = Variable<String>(basicPayCode2);
+    }
     return map;
   }
 
@@ -997,6 +1139,18 @@ class Employee extends DataClass implements Insertable<Employee> {
       category: Value(category),
       baseSalary: Value(baseSalary),
       createdAt: Value(createdAt),
+      grossClaimCode: grossClaimCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(grossClaimCode),
+      basicMonthCode: basicMonthCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(basicMonthCode),
+      basicPayCode1: basicPayCode1 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(basicPayCode1),
+      basicPayCode2: basicPayCode2 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(basicPayCode2),
     );
   }
 
@@ -1020,6 +1174,10 @@ class Employee extends DataClass implements Insertable<Employee> {
       category: serializer.fromJson<String>(json['category']),
       baseSalary: serializer.fromJson<double>(json['baseSalary']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
+      grossClaimCode: serializer.fromJson<String?>(json['grossClaimCode']),
+      basicMonthCode: serializer.fromJson<String?>(json['basicMonthCode']),
+      basicPayCode1: serializer.fromJson<String?>(json['basicPayCode1']),
+      basicPayCode2: serializer.fromJson<String?>(json['basicPayCode2']),
     );
   }
   @override
@@ -1040,6 +1198,10 @@ class Employee extends DataClass implements Insertable<Employee> {
       'category': serializer.toJson<String>(category),
       'baseSalary': serializer.toJson<double>(baseSalary),
       'createdAt': serializer.toJson<String>(createdAt),
+      'grossClaimCode': serializer.toJson<String?>(grossClaimCode),
+      'basicMonthCode': serializer.toJson<String?>(basicMonthCode),
+      'basicPayCode1': serializer.toJson<String?>(basicPayCode1),
+      'basicPayCode2': serializer.toJson<String?>(basicPayCode2),
     };
   }
 
@@ -1058,6 +1220,10 @@ class Employee extends DataClass implements Insertable<Employee> {
     String? category,
     double? baseSalary,
     String? createdAt,
+    Value<String?> grossClaimCode = const Value.absent(),
+    Value<String?> basicMonthCode = const Value.absent(),
+    Value<String?> basicPayCode1 = const Value.absent(),
+    Value<String?> basicPayCode2 = const Value.absent(),
   }) => Employee(
     id: id ?? this.id,
     employeeId: employeeId ?? this.employeeId,
@@ -1075,6 +1241,18 @@ class Employee extends DataClass implements Insertable<Employee> {
     category: category ?? this.category,
     baseSalary: baseSalary ?? this.baseSalary,
     createdAt: createdAt ?? this.createdAt,
+    grossClaimCode: grossClaimCode.present
+        ? grossClaimCode.value
+        : this.grossClaimCode,
+    basicMonthCode: basicMonthCode.present
+        ? basicMonthCode.value
+        : this.basicMonthCode,
+    basicPayCode1: basicPayCode1.present
+        ? basicPayCode1.value
+        : this.basicPayCode1,
+    basicPayCode2: basicPayCode2.present
+        ? basicPayCode2.value
+        : this.basicPayCode2,
   );
   Employee copyWithCompanion(EmployeesCompanion data) {
     return Employee(
@@ -1106,6 +1284,18 @@ class Employee extends DataClass implements Insertable<Employee> {
           ? data.baseSalary.value
           : this.baseSalary,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      grossClaimCode: data.grossClaimCode.present
+          ? data.grossClaimCode.value
+          : this.grossClaimCode,
+      basicMonthCode: data.basicMonthCode.present
+          ? data.basicMonthCode.value
+          : this.basicMonthCode,
+      basicPayCode1: data.basicPayCode1.present
+          ? data.basicPayCode1.value
+          : this.basicPayCode1,
+      basicPayCode2: data.basicPayCode2.present
+          ? data.basicPayCode2.value
+          : this.basicPayCode2,
     );
   }
 
@@ -1125,7 +1315,11 @@ class Employee extends DataClass implements Insertable<Employee> {
           ..write('status: $status, ')
           ..write('category: $category, ')
           ..write('baseSalary: $baseSalary, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('grossClaimCode: $grossClaimCode, ')
+          ..write('basicMonthCode: $basicMonthCode, ')
+          ..write('basicPayCode1: $basicPayCode1, ')
+          ..write('basicPayCode2: $basicPayCode2')
           ..write(')'))
         .toString();
   }
@@ -1146,6 +1340,10 @@ class Employee extends DataClass implements Insertable<Employee> {
     category,
     baseSalary,
     createdAt,
+    grossClaimCode,
+    basicMonthCode,
+    basicPayCode1,
+    basicPayCode2,
   );
   @override
   bool operator ==(Object other) =>
@@ -1164,7 +1362,11 @@ class Employee extends DataClass implements Insertable<Employee> {
           other.status == this.status &&
           other.category == this.category &&
           other.baseSalary == this.baseSalary &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.grossClaimCode == this.grossClaimCode &&
+          other.basicMonthCode == this.basicMonthCode &&
+          other.basicPayCode1 == this.basicPayCode1 &&
+          other.basicPayCode2 == this.basicPayCode2);
 }
 
 class EmployeesCompanion extends UpdateCompanion<Employee> {
@@ -1182,6 +1384,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
   final Value<String> category;
   final Value<double> baseSalary;
   final Value<String> createdAt;
+  final Value<String?> grossClaimCode;
+  final Value<String?> basicMonthCode;
+  final Value<String?> basicPayCode1;
+  final Value<String?> basicPayCode2;
   const EmployeesCompanion({
     this.id = const Value.absent(),
     this.employeeId = const Value.absent(),
@@ -1197,6 +1403,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
     this.category = const Value.absent(),
     this.baseSalary = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.grossClaimCode = const Value.absent(),
+    this.basicMonthCode = const Value.absent(),
+    this.basicPayCode1 = const Value.absent(),
+    this.basicPayCode2 = const Value.absent(),
   });
   EmployeesCompanion.insert({
     this.id = const Value.absent(),
@@ -1213,6 +1423,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
     required String category,
     this.baseSalary = const Value.absent(),
     required String createdAt,
+    this.grossClaimCode = const Value.absent(),
+    this.basicMonthCode = const Value.absent(),
+    this.basicPayCode1 = const Value.absent(),
+    this.basicPayCode2 = const Value.absent(),
   }) : employeeId = Value(employeeId),
        fullName = Value(fullName),
        designation = Value(designation),
@@ -1236,6 +1450,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
     Expression<String>? category,
     Expression<double>? baseSalary,
     Expression<String>? createdAt,
+    Expression<String>? grossClaimCode,
+    Expression<String>? basicMonthCode,
+    Expression<String>? basicPayCode1,
+    Expression<String>? basicPayCode2,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1252,6 +1470,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
       if (category != null) 'category': category,
       if (baseSalary != null) 'base_salary': baseSalary,
       if (createdAt != null) 'created_at': createdAt,
+      if (grossClaimCode != null) 'gross_claim_code': grossClaimCode,
+      if (basicMonthCode != null) 'basic_month_code': basicMonthCode,
+      if (basicPayCode1 != null) 'basic_pay_code1': basicPayCode1,
+      if (basicPayCode2 != null) 'basic_pay_code2': basicPayCode2,
     });
   }
 
@@ -1270,6 +1492,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
     Value<String>? category,
     Value<double>? baseSalary,
     Value<String>? createdAt,
+    Value<String?>? grossClaimCode,
+    Value<String?>? basicMonthCode,
+    Value<String?>? basicPayCode1,
+    Value<String?>? basicPayCode2,
   }) {
     return EmployeesCompanion(
       id: id ?? this.id,
@@ -1286,6 +1512,10 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
       category: category ?? this.category,
       baseSalary: baseSalary ?? this.baseSalary,
       createdAt: createdAt ?? this.createdAt,
+      grossClaimCode: grossClaimCode ?? this.grossClaimCode,
+      basicMonthCode: basicMonthCode ?? this.basicMonthCode,
+      basicPayCode1: basicPayCode1 ?? this.basicPayCode1,
+      basicPayCode2: basicPayCode2 ?? this.basicPayCode2,
     );
   }
 
@@ -1334,6 +1564,18 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
     if (createdAt.present) {
       map['created_at'] = Variable<String>(createdAt.value);
     }
+    if (grossClaimCode.present) {
+      map['gross_claim_code'] = Variable<String>(grossClaimCode.value);
+    }
+    if (basicMonthCode.present) {
+      map['basic_month_code'] = Variable<String>(basicMonthCode.value);
+    }
+    if (basicPayCode1.present) {
+      map['basic_pay_code1'] = Variable<String>(basicPayCode1.value);
+    }
+    if (basicPayCode2.present) {
+      map['basic_pay_code2'] = Variable<String>(basicPayCode2.value);
+    }
     return map;
   }
 
@@ -1353,7 +1595,11 @@ class EmployeesCompanion extends UpdateCompanion<Employee> {
           ..write('status: $status, ')
           ..write('category: $category, ')
           ..write('baseSalary: $baseSalary, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('grossClaimCode: $grossClaimCode, ')
+          ..write('basicMonthCode: $basicMonthCode, ')
+          ..write('basicPayCode1: $basicPayCode1, ')
+          ..write('basicPayCode2: $basicPayCode2')
           ..write(')'))
         .toString();
   }
@@ -2854,6 +3100,1054 @@ class PayrollRecordsCompanion extends UpdateCompanion<PayrollRecord> {
   }
 }
 
+class $SalaryTemplatesTable extends SalaryTemplates
+    with TableInfo<$SalaryTemplatesTable, SalaryTemplate> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SalaryTemplatesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _templateNameMeta = const VerificationMeta(
+    'templateName',
+  );
+  @override
+  late final GeneratedColumn<String> templateName = GeneratedColumn<String>(
+    'template_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _categoryMeta = const VerificationMeta(
+    'category',
+  );
+  @override
+  late final GeneratedColumn<String> category = GeneratedColumn<String>(
+    'category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pedo'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<String> updatedAt = GeneratedColumn<String>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    templateName,
+    description,
+    category,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'salary_templates';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SalaryTemplate> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('template_name')) {
+      context.handle(
+        _templateNameMeta,
+        templateName.isAcceptableOrUnknown(
+          data['template_name']!,
+          _templateNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_templateNameMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('category')) {
+      context.handle(
+        _categoryMeta,
+        category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {templateName},
+  ];
+  @override
+  SalaryTemplate map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SalaryTemplate(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      templateName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}template_name'],
+      )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      ),
+      category: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SalaryTemplatesTable createAlias(String alias) {
+    return $SalaryTemplatesTable(attachedDatabase, alias);
+  }
+}
+
+class SalaryTemplate extends DataClass implements Insertable<SalaryTemplate> {
+  final int id;
+  final String templateName;
+  final String? description;
+  final String category;
+  final String createdAt;
+  final String updatedAt;
+  const SalaryTemplate({
+    required this.id,
+    required this.templateName,
+    this.description,
+    required this.category,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['template_name'] = Variable<String>(templateName);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    map['category'] = Variable<String>(category);
+    map['created_at'] = Variable<String>(createdAt);
+    map['updated_at'] = Variable<String>(updatedAt);
+    return map;
+  }
+
+  SalaryTemplatesCompanion toCompanion(bool nullToAbsent) {
+    return SalaryTemplatesCompanion(
+      id: Value(id),
+      templateName: Value(templateName),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      category: Value(category),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SalaryTemplate.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SalaryTemplate(
+      id: serializer.fromJson<int>(json['id']),
+      templateName: serializer.fromJson<String>(json['templateName']),
+      description: serializer.fromJson<String?>(json['description']),
+      category: serializer.fromJson<String>(json['category']),
+      createdAt: serializer.fromJson<String>(json['createdAt']),
+      updatedAt: serializer.fromJson<String>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'templateName': serializer.toJson<String>(templateName),
+      'description': serializer.toJson<String?>(description),
+      'category': serializer.toJson<String>(category),
+      'createdAt': serializer.toJson<String>(createdAt),
+      'updatedAt': serializer.toJson<String>(updatedAt),
+    };
+  }
+
+  SalaryTemplate copyWith({
+    int? id,
+    String? templateName,
+    Value<String?> description = const Value.absent(),
+    String? category,
+    String? createdAt,
+    String? updatedAt,
+  }) => SalaryTemplate(
+    id: id ?? this.id,
+    templateName: templateName ?? this.templateName,
+    description: description.present ? description.value : this.description,
+    category: category ?? this.category,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SalaryTemplate copyWithCompanion(SalaryTemplatesCompanion data) {
+    return SalaryTemplate(
+      id: data.id.present ? data.id.value : this.id,
+      templateName: data.templateName.present
+          ? data.templateName.value
+          : this.templateName,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
+      category: data.category.present ? data.category.value : this.category,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SalaryTemplate(')
+          ..write('id: $id, ')
+          ..write('templateName: $templateName, ')
+          ..write('description: $description, ')
+          ..write('category: $category, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    templateName,
+    description,
+    category,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SalaryTemplate &&
+          other.id == this.id &&
+          other.templateName == this.templateName &&
+          other.description == this.description &&
+          other.category == this.category &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SalaryTemplatesCompanion extends UpdateCompanion<SalaryTemplate> {
+  final Value<int> id;
+  final Value<String> templateName;
+  final Value<String?> description;
+  final Value<String> category;
+  final Value<String> createdAt;
+  final Value<String> updatedAt;
+  const SalaryTemplatesCompanion({
+    this.id = const Value.absent(),
+    this.templateName = const Value.absent(),
+    this.description = const Value.absent(),
+    this.category = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  SalaryTemplatesCompanion.insert({
+    this.id = const Value.absent(),
+    required String templateName,
+    this.description = const Value.absent(),
+    this.category = const Value.absent(),
+    required String createdAt,
+    required String updatedAt,
+  }) : templateName = Value(templateName),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<SalaryTemplate> custom({
+    Expression<int>? id,
+    Expression<String>? templateName,
+    Expression<String>? description,
+    Expression<String>? category,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (templateName != null) 'template_name': templateName,
+      if (description != null) 'description': description,
+      if (category != null) 'category': category,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  SalaryTemplatesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? templateName,
+    Value<String?>? description,
+    Value<String>? category,
+    Value<String>? createdAt,
+    Value<String>? updatedAt,
+  }) {
+    return SalaryTemplatesCompanion(
+      id: id ?? this.id,
+      templateName: templateName ?? this.templateName,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (templateName.present) {
+      map['template_name'] = Variable<String>(templateName.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (category.present) {
+      map['category'] = Variable<String>(category.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SalaryTemplatesCompanion(')
+          ..write('id: $id, ')
+          ..write('templateName: $templateName, ')
+          ..write('description: $description, ')
+          ..write('category: $category, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SalaryTemplateItemsTable extends SalaryTemplateItems
+    with TableInfo<$SalaryTemplateItemsTable, SalaryTemplateItem> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SalaryTemplateItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _templateIdMeta = const VerificationMeta(
+    'templateId',
+  );
+  @override
+  late final GeneratedColumn<int> templateId = GeneratedColumn<int>(
+    'template_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES salary_templates (id)',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _componentTypeMeta = const VerificationMeta(
+    'componentType',
+  );
+  @override
+  late final GeneratedColumn<String> componentType = GeneratedColumn<String>(
+    'component_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _allowanceSectionMeta = const VerificationMeta(
+    'allowanceSection',
+  );
+  @override
+  late final GeneratedColumn<String> allowanceSection = GeneratedColumn<String>(
+    'allowance_section',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _valueTypeMeta = const VerificationMeta(
+    'valueType',
+  );
+  @override
+  late final GeneratedColumn<String> valueType = GeneratedColumn<String>(
+    'value_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _defaultValueMeta = const VerificationMeta(
+    'defaultValue',
+  );
+  @override
+  late final GeneratedColumn<double> defaultValue = GeneratedColumn<double>(
+    'default_value',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _classificationCodeMeta =
+      const VerificationMeta('classificationCode');
+  @override
+  late final GeneratedColumn<String> classificationCode =
+      GeneratedColumn<String>(
+        'classification_code',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _isActiveMeta = const VerificationMeta(
+    'isActive',
+  );
+  @override
+  late final GeneratedColumn<bool> isActive = GeneratedColumn<bool>(
+    'is_active',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_active" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    templateId,
+    name,
+    componentType,
+    allowanceSection,
+    valueType,
+    defaultValue,
+    classificationCode,
+    sortOrder,
+    isActive,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'salary_template_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SalaryTemplateItem> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('template_id')) {
+      context.handle(
+        _templateIdMeta,
+        templateId.isAcceptableOrUnknown(data['template_id']!, _templateIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_templateIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('component_type')) {
+      context.handle(
+        _componentTypeMeta,
+        componentType.isAcceptableOrUnknown(
+          data['component_type']!,
+          _componentTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_componentTypeMeta);
+    }
+    if (data.containsKey('allowance_section')) {
+      context.handle(
+        _allowanceSectionMeta,
+        allowanceSection.isAcceptableOrUnknown(
+          data['allowance_section']!,
+          _allowanceSectionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('value_type')) {
+      context.handle(
+        _valueTypeMeta,
+        valueType.isAcceptableOrUnknown(data['value_type']!, _valueTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueTypeMeta);
+    }
+    if (data.containsKey('default_value')) {
+      context.handle(
+        _defaultValueMeta,
+        defaultValue.isAcceptableOrUnknown(
+          data['default_value']!,
+          _defaultValueMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_defaultValueMeta);
+    }
+    if (data.containsKey('classification_code')) {
+      context.handle(
+        _classificationCodeMeta,
+        classificationCode.isAcceptableOrUnknown(
+          data['classification_code']!,
+          _classificationCodeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('is_active')) {
+      context.handle(
+        _isActiveMeta,
+        isActive.isAcceptableOrUnknown(data['is_active']!, _isActiveMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SalaryTemplateItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SalaryTemplateItem(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      templateId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}template_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      componentType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}component_type'],
+      )!,
+      allowanceSection: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}allowance_section'],
+      ),
+      valueType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value_type'],
+      )!,
+      defaultValue: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}default_value'],
+      )!,
+      classificationCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}classification_code'],
+      ),
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      isActive: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_active'],
+      )!,
+    );
+  }
+
+  @override
+  $SalaryTemplateItemsTable createAlias(String alias) {
+    return $SalaryTemplateItemsTable(attachedDatabase, alias);
+  }
+}
+
+class SalaryTemplateItem extends DataClass
+    implements Insertable<SalaryTemplateItem> {
+  final int id;
+  final int templateId;
+  final String name;
+  final String componentType;
+  final String? allowanceSection;
+  final String valueType;
+  final double defaultValue;
+  final String? classificationCode;
+  final int sortOrder;
+  final bool isActive;
+  const SalaryTemplateItem({
+    required this.id,
+    required this.templateId,
+    required this.name,
+    required this.componentType,
+    this.allowanceSection,
+    required this.valueType,
+    required this.defaultValue,
+    this.classificationCode,
+    required this.sortOrder,
+    required this.isActive,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['template_id'] = Variable<int>(templateId);
+    map['name'] = Variable<String>(name);
+    map['component_type'] = Variable<String>(componentType);
+    if (!nullToAbsent || allowanceSection != null) {
+      map['allowance_section'] = Variable<String>(allowanceSection);
+    }
+    map['value_type'] = Variable<String>(valueType);
+    map['default_value'] = Variable<double>(defaultValue);
+    if (!nullToAbsent || classificationCode != null) {
+      map['classification_code'] = Variable<String>(classificationCode);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['is_active'] = Variable<bool>(isActive);
+    return map;
+  }
+
+  SalaryTemplateItemsCompanion toCompanion(bool nullToAbsent) {
+    return SalaryTemplateItemsCompanion(
+      id: Value(id),
+      templateId: Value(templateId),
+      name: Value(name),
+      componentType: Value(componentType),
+      allowanceSection: allowanceSection == null && nullToAbsent
+          ? const Value.absent()
+          : Value(allowanceSection),
+      valueType: Value(valueType),
+      defaultValue: Value(defaultValue),
+      classificationCode: classificationCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(classificationCode),
+      sortOrder: Value(sortOrder),
+      isActive: Value(isActive),
+    );
+  }
+
+  factory SalaryTemplateItem.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SalaryTemplateItem(
+      id: serializer.fromJson<int>(json['id']),
+      templateId: serializer.fromJson<int>(json['templateId']),
+      name: serializer.fromJson<String>(json['name']),
+      componentType: serializer.fromJson<String>(json['componentType']),
+      allowanceSection: serializer.fromJson<String?>(json['allowanceSection']),
+      valueType: serializer.fromJson<String>(json['valueType']),
+      defaultValue: serializer.fromJson<double>(json['defaultValue']),
+      classificationCode: serializer.fromJson<String?>(
+        json['classificationCode'],
+      ),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      isActive: serializer.fromJson<bool>(json['isActive']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'templateId': serializer.toJson<int>(templateId),
+      'name': serializer.toJson<String>(name),
+      'componentType': serializer.toJson<String>(componentType),
+      'allowanceSection': serializer.toJson<String?>(allowanceSection),
+      'valueType': serializer.toJson<String>(valueType),
+      'defaultValue': serializer.toJson<double>(defaultValue),
+      'classificationCode': serializer.toJson<String?>(classificationCode),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'isActive': serializer.toJson<bool>(isActive),
+    };
+  }
+
+  SalaryTemplateItem copyWith({
+    int? id,
+    int? templateId,
+    String? name,
+    String? componentType,
+    Value<String?> allowanceSection = const Value.absent(),
+    String? valueType,
+    double? defaultValue,
+    Value<String?> classificationCode = const Value.absent(),
+    int? sortOrder,
+    bool? isActive,
+  }) => SalaryTemplateItem(
+    id: id ?? this.id,
+    templateId: templateId ?? this.templateId,
+    name: name ?? this.name,
+    componentType: componentType ?? this.componentType,
+    allowanceSection: allowanceSection.present
+        ? allowanceSection.value
+        : this.allowanceSection,
+    valueType: valueType ?? this.valueType,
+    defaultValue: defaultValue ?? this.defaultValue,
+    classificationCode: classificationCode.present
+        ? classificationCode.value
+        : this.classificationCode,
+    sortOrder: sortOrder ?? this.sortOrder,
+    isActive: isActive ?? this.isActive,
+  );
+  SalaryTemplateItem copyWithCompanion(SalaryTemplateItemsCompanion data) {
+    return SalaryTemplateItem(
+      id: data.id.present ? data.id.value : this.id,
+      templateId: data.templateId.present
+          ? data.templateId.value
+          : this.templateId,
+      name: data.name.present ? data.name.value : this.name,
+      componentType: data.componentType.present
+          ? data.componentType.value
+          : this.componentType,
+      allowanceSection: data.allowanceSection.present
+          ? data.allowanceSection.value
+          : this.allowanceSection,
+      valueType: data.valueType.present ? data.valueType.value : this.valueType,
+      defaultValue: data.defaultValue.present
+          ? data.defaultValue.value
+          : this.defaultValue,
+      classificationCode: data.classificationCode.present
+          ? data.classificationCode.value
+          : this.classificationCode,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      isActive: data.isActive.present ? data.isActive.value : this.isActive,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SalaryTemplateItem(')
+          ..write('id: $id, ')
+          ..write('templateId: $templateId, ')
+          ..write('name: $name, ')
+          ..write('componentType: $componentType, ')
+          ..write('allowanceSection: $allowanceSection, ')
+          ..write('valueType: $valueType, ')
+          ..write('defaultValue: $defaultValue, ')
+          ..write('classificationCode: $classificationCode, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('isActive: $isActive')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    templateId,
+    name,
+    componentType,
+    allowanceSection,
+    valueType,
+    defaultValue,
+    classificationCode,
+    sortOrder,
+    isActive,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SalaryTemplateItem &&
+          other.id == this.id &&
+          other.templateId == this.templateId &&
+          other.name == this.name &&
+          other.componentType == this.componentType &&
+          other.allowanceSection == this.allowanceSection &&
+          other.valueType == this.valueType &&
+          other.defaultValue == this.defaultValue &&
+          other.classificationCode == this.classificationCode &&
+          other.sortOrder == this.sortOrder &&
+          other.isActive == this.isActive);
+}
+
+class SalaryTemplateItemsCompanion extends UpdateCompanion<SalaryTemplateItem> {
+  final Value<int> id;
+  final Value<int> templateId;
+  final Value<String> name;
+  final Value<String> componentType;
+  final Value<String?> allowanceSection;
+  final Value<String> valueType;
+  final Value<double> defaultValue;
+  final Value<String?> classificationCode;
+  final Value<int> sortOrder;
+  final Value<bool> isActive;
+  const SalaryTemplateItemsCompanion({
+    this.id = const Value.absent(),
+    this.templateId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.componentType = const Value.absent(),
+    this.allowanceSection = const Value.absent(),
+    this.valueType = const Value.absent(),
+    this.defaultValue = const Value.absent(),
+    this.classificationCode = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.isActive = const Value.absent(),
+  });
+  SalaryTemplateItemsCompanion.insert({
+    this.id = const Value.absent(),
+    required int templateId,
+    required String name,
+    required String componentType,
+    this.allowanceSection = const Value.absent(),
+    required String valueType,
+    required double defaultValue,
+    this.classificationCode = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.isActive = const Value.absent(),
+  }) : templateId = Value(templateId),
+       name = Value(name),
+       componentType = Value(componentType),
+       valueType = Value(valueType),
+       defaultValue = Value(defaultValue);
+  static Insertable<SalaryTemplateItem> custom({
+    Expression<int>? id,
+    Expression<int>? templateId,
+    Expression<String>? name,
+    Expression<String>? componentType,
+    Expression<String>? allowanceSection,
+    Expression<String>? valueType,
+    Expression<double>? defaultValue,
+    Expression<String>? classificationCode,
+    Expression<int>? sortOrder,
+    Expression<bool>? isActive,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (templateId != null) 'template_id': templateId,
+      if (name != null) 'name': name,
+      if (componentType != null) 'component_type': componentType,
+      if (allowanceSection != null) 'allowance_section': allowanceSection,
+      if (valueType != null) 'value_type': valueType,
+      if (defaultValue != null) 'default_value': defaultValue,
+      if (classificationCode != null) 'classification_code': classificationCode,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (isActive != null) 'is_active': isActive,
+    });
+  }
+
+  SalaryTemplateItemsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? templateId,
+    Value<String>? name,
+    Value<String>? componentType,
+    Value<String?>? allowanceSection,
+    Value<String>? valueType,
+    Value<double>? defaultValue,
+    Value<String?>? classificationCode,
+    Value<int>? sortOrder,
+    Value<bool>? isActive,
+  }) {
+    return SalaryTemplateItemsCompanion(
+      id: id ?? this.id,
+      templateId: templateId ?? this.templateId,
+      name: name ?? this.name,
+      componentType: componentType ?? this.componentType,
+      allowanceSection: allowanceSection ?? this.allowanceSection,
+      valueType: valueType ?? this.valueType,
+      defaultValue: defaultValue ?? this.defaultValue,
+      classificationCode: classificationCode ?? this.classificationCode,
+      sortOrder: sortOrder ?? this.sortOrder,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (templateId.present) {
+      map['template_id'] = Variable<int>(templateId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (componentType.present) {
+      map['component_type'] = Variable<String>(componentType.value);
+    }
+    if (allowanceSection.present) {
+      map['allowance_section'] = Variable<String>(allowanceSection.value);
+    }
+    if (valueType.present) {
+      map['value_type'] = Variable<String>(valueType.value);
+    }
+    if (defaultValue.present) {
+      map['default_value'] = Variable<double>(defaultValue.value);
+    }
+    if (classificationCode.present) {
+      map['classification_code'] = Variable<String>(classificationCode.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (isActive.present) {
+      map['is_active'] = Variable<bool>(isActive.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SalaryTemplateItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('templateId: $templateId, ')
+          ..write('name: $name, ')
+          ..write('componentType: $componentType, ')
+          ..write('allowanceSection: $allowanceSection, ')
+          ..write('valueType: $valueType, ')
+          ..write('defaultValue: $defaultValue, ')
+          ..write('classificationCode: $classificationCode, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('isActive: $isActive')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2863,6 +4157,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $PayrollRecordsTable payrollRecords = $PayrollRecordsTable(this);
+  late final $SalaryTemplatesTable salaryTemplates = $SalaryTemplatesTable(
+    this,
+  );
+  late final $SalaryTemplateItemsTable salaryTemplateItems =
+      $SalaryTemplateItemsTable(this);
   late final AppSettingsDao appSettingsDao = AppSettingsDao(
     this as AppDatabase,
   );
@@ -2871,6 +4170,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this as AppDatabase,
   );
   late final PayrollRecordsDao payrollRecordsDao = PayrollRecordsDao(
+    this as AppDatabase,
+  );
+  late final SalaryTemplatesDao salaryTemplatesDao = SalaryTemplatesDao(
     this as AppDatabase,
   );
   @override
@@ -2882,6 +4184,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     employees,
     salaryComponents,
     payrollRecords,
+    salaryTemplates,
+    salaryTemplateItems,
   ];
 }
 
@@ -3143,6 +4447,10 @@ typedef $$EmployeesTableCreateCompanionBuilder =
       required String category,
       Value<double> baseSalary,
       required String createdAt,
+      Value<String?> grossClaimCode,
+      Value<String?> basicMonthCode,
+      Value<String?> basicPayCode1,
+      Value<String?> basicPayCode2,
     });
 typedef $$EmployeesTableUpdateCompanionBuilder =
     EmployeesCompanion Function({
@@ -3160,6 +4468,10 @@ typedef $$EmployeesTableUpdateCompanionBuilder =
       Value<String> category,
       Value<double> baseSalary,
       Value<String> createdAt,
+      Value<String?> grossClaimCode,
+      Value<String?> basicMonthCode,
+      Value<String?> basicPayCode1,
+      Value<String?> basicPayCode2,
     });
 
 final class $$EmployeesTableReferences
@@ -3281,6 +4593,26 @@ class $$EmployeesTableFilterComposer
 
   ColumnFilters<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get grossClaimCode => $composableBuilder(
+    column: $table.grossClaimCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get basicMonthCode => $composableBuilder(
+    column: $table.basicMonthCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get basicPayCode1 => $composableBuilder(
+    column: $table.basicPayCode1,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get basicPayCode2 => $composableBuilder(
+    column: $table.basicPayCode2,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3413,6 +4745,26 @@ class $$EmployeesTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get grossClaimCode => $composableBuilder(
+    column: $table.grossClaimCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get basicMonthCode => $composableBuilder(
+    column: $table.basicMonthCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get basicPayCode1 => $composableBuilder(
+    column: $table.basicPayCode1,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get basicPayCode2 => $composableBuilder(
+    column: $table.basicPayCode2,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$EmployeesTableAnnotationComposer
@@ -3479,6 +4831,26 @@ class $$EmployeesTableAnnotationComposer
 
   GeneratedColumn<String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get grossClaimCode => $composableBuilder(
+    column: $table.grossClaimCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get basicMonthCode => $composableBuilder(
+    column: $table.basicMonthCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get basicPayCode1 => $composableBuilder(
+    column: $table.basicPayCode1,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get basicPayCode2 => $composableBuilder(
+    column: $table.basicPayCode2,
+    builder: (column) => column,
+  );
 
   Expression<T> salaryComponentsRefs<T extends Object>(
     Expression<T> Function($$SalaryComponentsTableAnnotationComposer a) f,
@@ -3576,6 +4948,10 @@ class $$EmployeesTableTableManager
                 Value<String> category = const Value.absent(),
                 Value<double> baseSalary = const Value.absent(),
                 Value<String> createdAt = const Value.absent(),
+                Value<String?> grossClaimCode = const Value.absent(),
+                Value<String?> basicMonthCode = const Value.absent(),
+                Value<String?> basicPayCode1 = const Value.absent(),
+                Value<String?> basicPayCode2 = const Value.absent(),
               }) => EmployeesCompanion(
                 id: id,
                 employeeId: employeeId,
@@ -3591,6 +4967,10 @@ class $$EmployeesTableTableManager
                 category: category,
                 baseSalary: baseSalary,
                 createdAt: createdAt,
+                grossClaimCode: grossClaimCode,
+                basicMonthCode: basicMonthCode,
+                basicPayCode1: basicPayCode1,
+                basicPayCode2: basicPayCode2,
               ),
           createCompanionCallback:
               ({
@@ -3608,6 +4988,10 @@ class $$EmployeesTableTableManager
                 required String category,
                 Value<double> baseSalary = const Value.absent(),
                 required String createdAt,
+                Value<String?> grossClaimCode = const Value.absent(),
+                Value<String?> basicMonthCode = const Value.absent(),
+                Value<String?> basicPayCode1 = const Value.absent(),
+                Value<String?> basicPayCode2 = const Value.absent(),
               }) => EmployeesCompanion.insert(
                 id: id,
                 employeeId: employeeId,
@@ -3623,6 +5007,10 @@ class $$EmployeesTableTableManager
                 category: category,
                 baseSalary: baseSalary,
                 createdAt: createdAt,
+                grossClaimCode: grossClaimCode,
+                basicMonthCode: basicMonthCode,
+                basicPayCode1: basicPayCode1,
+                basicPayCode2: basicPayCode2,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -4657,6 +6045,774 @@ typedef $$PayrollRecordsTableProcessedTableManager =
       PayrollRecord,
       PrefetchHooks Function({bool employeeId})
     >;
+typedef $$SalaryTemplatesTableCreateCompanionBuilder =
+    SalaryTemplatesCompanion Function({
+      Value<int> id,
+      required String templateName,
+      Value<String?> description,
+      Value<String> category,
+      required String createdAt,
+      required String updatedAt,
+    });
+typedef $$SalaryTemplatesTableUpdateCompanionBuilder =
+    SalaryTemplatesCompanion Function({
+      Value<int> id,
+      Value<String> templateName,
+      Value<String?> description,
+      Value<String> category,
+      Value<String> createdAt,
+      Value<String> updatedAt,
+    });
+
+final class $$SalaryTemplatesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $SalaryTemplatesTable, SalaryTemplate> {
+  $$SalaryTemplatesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static MultiTypedResultKey<
+    $SalaryTemplateItemsTable,
+    List<SalaryTemplateItem>
+  >
+  _salaryTemplateItemsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.salaryTemplateItems,
+        aliasName: 'salary_templates__id__salary_template_items__template_id',
+      );
+
+  $$SalaryTemplateItemsTableProcessedTableManager get salaryTemplateItemsRefs {
+    final manager = $$SalaryTemplateItemsTableTableManager(
+      $_db,
+      $_db.salaryTemplateItems,
+    ).filter((f) => f.templateId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _salaryTemplateItemsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$SalaryTemplatesTableFilterComposer
+    extends Composer<_$AppDatabase, $SalaryTemplatesTable> {
+  $$SalaryTemplatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get templateName => $composableBuilder(
+    column: $table.templateName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> salaryTemplateItemsRefs(
+    Expression<bool> Function($$SalaryTemplateItemsTableFilterComposer f) f,
+  ) {
+    final $$SalaryTemplateItemsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.salaryTemplateItems,
+      getReferencedColumn: (t) => t.templateId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SalaryTemplateItemsTableFilterComposer(
+            $db: $db,
+            $table: $db.salaryTemplateItems,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$SalaryTemplatesTableOrderingComposer
+    extends Composer<_$AppDatabase, $SalaryTemplatesTable> {
+  $$SalaryTemplatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get templateName => $composableBuilder(
+    column: $table.templateName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SalaryTemplatesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SalaryTemplatesTable> {
+  $$SalaryTemplatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get templateName => $composableBuilder(
+    column: $table.templateName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> salaryTemplateItemsRefs<T extends Object>(
+    Expression<T> Function($$SalaryTemplateItemsTableAnnotationComposer a) f,
+  ) {
+    final $$SalaryTemplateItemsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.salaryTemplateItems,
+          getReferencedColumn: (t) => t.templateId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$SalaryTemplateItemsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.salaryTemplateItems,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+}
+
+class $$SalaryTemplatesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SalaryTemplatesTable,
+          SalaryTemplate,
+          $$SalaryTemplatesTableFilterComposer,
+          $$SalaryTemplatesTableOrderingComposer,
+          $$SalaryTemplatesTableAnnotationComposer,
+          $$SalaryTemplatesTableCreateCompanionBuilder,
+          $$SalaryTemplatesTableUpdateCompanionBuilder,
+          (SalaryTemplate, $$SalaryTemplatesTableReferences),
+          SalaryTemplate,
+          PrefetchHooks Function({bool salaryTemplateItemsRefs})
+        > {
+  $$SalaryTemplatesTableTableManager(
+    _$AppDatabase db,
+    $SalaryTemplatesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SalaryTemplatesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SalaryTemplatesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SalaryTemplatesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> templateName = const Value.absent(),
+                Value<String?> description = const Value.absent(),
+                Value<String> category = const Value.absent(),
+                Value<String> createdAt = const Value.absent(),
+                Value<String> updatedAt = const Value.absent(),
+              }) => SalaryTemplatesCompanion(
+                id: id,
+                templateName: templateName,
+                description: description,
+                category: category,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String templateName,
+                Value<String?> description = const Value.absent(),
+                Value<String> category = const Value.absent(),
+                required String createdAt,
+                required String updatedAt,
+              }) => SalaryTemplatesCompanion.insert(
+                id: id,
+                templateName: templateName,
+                description: description,
+                category: category,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$SalaryTemplatesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({salaryTemplateItemsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (salaryTemplateItemsRefs) db.salaryTemplateItems,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (salaryTemplateItemsRefs)
+                    await $_getPrefetchedData<
+                      SalaryTemplate,
+                      $SalaryTemplatesTable,
+                      SalaryTemplateItem
+                    >(
+                      currentTable: table,
+                      referencedTable: $$SalaryTemplatesTableReferences
+                          ._salaryTemplateItemsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$SalaryTemplatesTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).salaryTemplateItemsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.templateId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$SalaryTemplatesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SalaryTemplatesTable,
+      SalaryTemplate,
+      $$SalaryTemplatesTableFilterComposer,
+      $$SalaryTemplatesTableOrderingComposer,
+      $$SalaryTemplatesTableAnnotationComposer,
+      $$SalaryTemplatesTableCreateCompanionBuilder,
+      $$SalaryTemplatesTableUpdateCompanionBuilder,
+      (SalaryTemplate, $$SalaryTemplatesTableReferences),
+      SalaryTemplate,
+      PrefetchHooks Function({bool salaryTemplateItemsRefs})
+    >;
+typedef $$SalaryTemplateItemsTableCreateCompanionBuilder =
+    SalaryTemplateItemsCompanion Function({
+      Value<int> id,
+      required int templateId,
+      required String name,
+      required String componentType,
+      Value<String?> allowanceSection,
+      required String valueType,
+      required double defaultValue,
+      Value<String?> classificationCode,
+      Value<int> sortOrder,
+      Value<bool> isActive,
+    });
+typedef $$SalaryTemplateItemsTableUpdateCompanionBuilder =
+    SalaryTemplateItemsCompanion Function({
+      Value<int> id,
+      Value<int> templateId,
+      Value<String> name,
+      Value<String> componentType,
+      Value<String?> allowanceSection,
+      Value<String> valueType,
+      Value<double> defaultValue,
+      Value<String?> classificationCode,
+      Value<int> sortOrder,
+      Value<bool> isActive,
+    });
+
+final class $$SalaryTemplateItemsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $SalaryTemplateItemsTable,
+          SalaryTemplateItem
+        > {
+  $$SalaryTemplateItemsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $SalaryTemplatesTable _templateIdTable(_$AppDatabase db) => db
+      .salaryTemplates
+      .createAlias('salary_template_items__template_id__salary_templates__id');
+
+  $$SalaryTemplatesTableProcessedTableManager get templateId {
+    final $_column = $_itemColumn<int>('template_id')!;
+
+    final manager = $$SalaryTemplatesTableTableManager(
+      $_db,
+      $_db.salaryTemplates,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_templateIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$SalaryTemplateItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $SalaryTemplateItemsTable> {
+  $$SalaryTemplateItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get componentType => $composableBuilder(
+    column: $table.componentType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get valueType => $composableBuilder(
+    column: $table.valueType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get defaultValue => $composableBuilder(
+    column: $table.defaultValue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get classificationCode => $composableBuilder(
+    column: $table.classificationCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$SalaryTemplatesTableFilterComposer get templateId {
+    final $$SalaryTemplatesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.templateId,
+      referencedTable: $db.salaryTemplates,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SalaryTemplatesTableFilterComposer(
+            $db: $db,
+            $table: $db.salaryTemplates,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SalaryTemplateItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SalaryTemplateItemsTable> {
+  $$SalaryTemplateItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get componentType => $composableBuilder(
+    column: $table.componentType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get valueType => $composableBuilder(
+    column: $table.valueType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get defaultValue => $composableBuilder(
+    column: $table.defaultValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get classificationCode => $composableBuilder(
+    column: $table.classificationCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$SalaryTemplatesTableOrderingComposer get templateId {
+    final $$SalaryTemplatesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.templateId,
+      referencedTable: $db.salaryTemplates,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SalaryTemplatesTableOrderingComposer(
+            $db: $db,
+            $table: $db.salaryTemplates,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SalaryTemplateItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SalaryTemplateItemsTable> {
+  $$SalaryTemplateItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get componentType => $composableBuilder(
+    column: $table.componentType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get allowanceSection => $composableBuilder(
+    column: $table.allowanceSection,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get valueType =>
+      $composableBuilder(column: $table.valueType, builder: (column) => column);
+
+  GeneratedColumn<double> get defaultValue => $composableBuilder(
+    column: $table.defaultValue,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get classificationCode => $composableBuilder(
+    column: $table.classificationCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  $$SalaryTemplatesTableAnnotationComposer get templateId {
+    final $$SalaryTemplatesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.templateId,
+      referencedTable: $db.salaryTemplates,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SalaryTemplatesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.salaryTemplates,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SalaryTemplateItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SalaryTemplateItemsTable,
+          SalaryTemplateItem,
+          $$SalaryTemplateItemsTableFilterComposer,
+          $$SalaryTemplateItemsTableOrderingComposer,
+          $$SalaryTemplateItemsTableAnnotationComposer,
+          $$SalaryTemplateItemsTableCreateCompanionBuilder,
+          $$SalaryTemplateItemsTableUpdateCompanionBuilder,
+          (SalaryTemplateItem, $$SalaryTemplateItemsTableReferences),
+          SalaryTemplateItem,
+          PrefetchHooks Function({bool templateId})
+        > {
+  $$SalaryTemplateItemsTableTableManager(
+    _$AppDatabase db,
+    $SalaryTemplateItemsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SalaryTemplateItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SalaryTemplateItemsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$SalaryTemplateItemsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> templateId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> componentType = const Value.absent(),
+                Value<String?> allowanceSection = const Value.absent(),
+                Value<String> valueType = const Value.absent(),
+                Value<double> defaultValue = const Value.absent(),
+                Value<String?> classificationCode = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
+              }) => SalaryTemplateItemsCompanion(
+                id: id,
+                templateId: templateId,
+                name: name,
+                componentType: componentType,
+                allowanceSection: allowanceSection,
+                valueType: valueType,
+                defaultValue: defaultValue,
+                classificationCode: classificationCode,
+                sortOrder: sortOrder,
+                isActive: isActive,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int templateId,
+                required String name,
+                required String componentType,
+                Value<String?> allowanceSection = const Value.absent(),
+                required String valueType,
+                required double defaultValue,
+                Value<String?> classificationCode = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
+              }) => SalaryTemplateItemsCompanion.insert(
+                id: id,
+                templateId: templateId,
+                name: name,
+                componentType: componentType,
+                allowanceSection: allowanceSection,
+                valueType: valueType,
+                defaultValue: defaultValue,
+                classificationCode: classificationCode,
+                sortOrder: sortOrder,
+                isActive: isActive,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$SalaryTemplateItemsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({templateId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (templateId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.templateId,
+                                referencedTable:
+                                    $$SalaryTemplateItemsTableReferences
+                                        ._templateIdTable(db),
+                                referencedColumn:
+                                    $$SalaryTemplateItemsTableReferences
+                                        ._templateIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$SalaryTemplateItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SalaryTemplateItemsTable,
+      SalaryTemplateItem,
+      $$SalaryTemplateItemsTableFilterComposer,
+      $$SalaryTemplateItemsTableOrderingComposer,
+      $$SalaryTemplateItemsTableAnnotationComposer,
+      $$SalaryTemplateItemsTableCreateCompanionBuilder,
+      $$SalaryTemplateItemsTableUpdateCompanionBuilder,
+      (SalaryTemplateItem, $$SalaryTemplateItemsTableReferences),
+      SalaryTemplateItem,
+      PrefetchHooks Function({bool templateId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4669,4 +6825,8 @@ class $AppDatabaseManager {
       $$SalaryComponentsTableTableManager(_db, _db.salaryComponents);
   $$PayrollRecordsTableTableManager get payrollRecords =>
       $$PayrollRecordsTableTableManager(_db, _db.payrollRecords);
+  $$SalaryTemplatesTableTableManager get salaryTemplates =>
+      $$SalaryTemplatesTableTableManager(_db, _db.salaryTemplates);
+  $$SalaryTemplateItemsTableTableManager get salaryTemplateItems =>
+      $$SalaryTemplateItemsTableTableManager(_db, _db.salaryTemplateItems);
 }

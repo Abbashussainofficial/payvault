@@ -12,6 +12,7 @@ Future<bool?> showAllowanceForm({
   required String componentType,
   SalaryComponent? component,
   String? allowanceSection,
+  int nextSortOrder = 0,
 }) {
   return showDialog<bool>(
     context: context,
@@ -21,6 +22,7 @@ Future<bool?> showAllowanceForm({
       componentType: componentType,
       component: component,
       allowanceSection: allowanceSection,
+      nextSortOrder: nextSortOrder,
     ),
   );
 }
@@ -30,12 +32,14 @@ class _AllowanceFormDialog extends StatefulWidget {
   final String componentType;
   final SalaryComponent? component;
   final String? allowanceSection;
+  final int nextSortOrder;
 
   const _AllowanceFormDialog({
     required this.employee,
     required this.componentType,
     required this.component,
     this.allowanceSection,
+    this.nextSortOrder = 0,
   });
 
   @override
@@ -84,7 +88,7 @@ class _AllowanceFormDialogState extends State<_AllowanceFormDialog> {
     _valueType = c?.valueType ?? 'percentage';
     _freezeMode = c?.freezeMode ?? 'not_frozen';
     _isActive = c?.isActive ?? true;
-    _sortOrder = c?.sortOrder ?? 0;
+    _sortOrder = c?.sortOrder ?? widget.nextSortOrder;
     _valueCtrl.addListener(() => setState(() {}));
   }
 

@@ -798,28 +798,12 @@ class _TableRow extends StatelessWidget {
             // Actions
             Expanded(
               flex: 18,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'View',
-                    onPressed: onView,
-                    icon: Icon(Icons.visibility_outlined, size: 18, color: cs.onSurface.withValues(alpha: 0.5)),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  IconButton(
-                    tooltip: 'Edit',
-                    onPressed: onEdit,
-                    icon: Icon(Icons.edit_outlined, size: 18, color: cs.onSurface.withValues(alpha: 0.5)),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  IconButton(
-                    tooltip: 'Delete',
-                    onPressed: onDelete,
-                    icon: Icon(Icons.delete_outline, size: 18, color: cs.error.withValues(alpha: 0.7)),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ],
+              child: _EmployeeActionButtons(
+                onView: onView,
+                onEdit: onEdit,
+                onDelete: onDelete,
+                isDark: isDark,
+                cs: cs,
               ),
             ),
           ],
@@ -1281,6 +1265,70 @@ class _FilterDialogState extends State<_FilterDialog> {
           child: const Text('Apply'),
         ),
       ],
+    );
+  }
+}
+
+// ── Employee action buttons [👁 | ✎ | 🗑] ────────────────────────────────────
+
+class _EmployeeActionButtons extends StatelessWidget {
+  final VoidCallback onView;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final bool isDark;
+  final ColorScheme cs;
+
+  const _EmployeeActionButtons({
+    required this.onView,
+    required this.onEdit,
+    required this.onDelete,
+    required this.isDark,
+    required this.cs,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final divColor = isDark ? Colors.grey.shade600 : Colors.grey.shade300;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.visibility_outlined, size: 16),
+            onPressed: onView,
+            tooltip: 'View',
+            color: Colors.blue.shade600,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          Container(width: 1, height: 14, color: divColor),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            onPressed: onEdit,
+            tooltip: 'Edit',
+            color: Colors.orange.shade600,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          Container(width: 1, height: 14, color: divColor),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 16),
+            onPressed: onDelete,
+            tooltip: 'Delete',
+            color: Colors.red.shade400,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
     );
   }
 }

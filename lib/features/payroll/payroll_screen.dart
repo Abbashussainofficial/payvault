@@ -25,8 +25,27 @@ class _EmpRow {
       record?.totalAllowances ?? SalaryCalculator.totalAllowances(components, employee.baseSalary);
   double get totalDeductions =>
       record?.totalDeductions ?? SalaryCalculator.totalDeductions(components, employee.baseSalary);
-  double get netSalary =>
-      record?.netSalary ?? SalaryCalculator.net(employee.baseSalary, components, components);
+  double get netSalary {
+    if (record != null) return record!.netSalary;
+    final base = employee.baseSalary;
+    if (employee.category == 'pedo') {
+      final regular = components.where((c) =>
+          c.isActive && c.componentType == 'allowance' &&
+          (c.allowanceSection == 'regular' || c.allowanceSection == null)).toList();
+      // Gross Claim is display-only — exclude from net
+      final otherForNet = components.where((c) =>
+          c.isActive && c.componentType == 'allowance' &&
+          c.allowanceSection == 'other' &&
+          !c.name.toLowerCase().contains('gross claim')).toList();
+      final deducts = components.where((c) =>
+          c.isActive && c.componentType == 'deduction').toList();
+      return base +
+          SalaryCalculator.totalAllowances(regular, base) +
+          SalaryCalculator.totalAllowances(otherForNet, base) -
+          SalaryCalculator.totalDeductions(deducts, base);
+    }
+    return SalaryCalculator.net(base, components, components);
+  }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -139,23 +158,75 @@ class _PayrollScreenState extends State<PayrollScreen> {
         final emp = row.employee;
         final comps = row.components;
         final base = emp.baseSalary;
+        final isPedo = emp.category == 'pedo';
         final activeAllow = comps.where((c) => c.isActive && c.componentType == 'allowance').toList();
         final activeDeduct = comps.where((c) => c.isActive && c.componentType == 'deduction').toList();
-        final totalAllow = SalaryCalculator.totalAllowances(comps, base);
-        final totalDeduct = SalaryCalculator.totalDeductions(comps, base);
-        final net = SalaryCalculator.net(base, comps, comps);
 
-        final snapshot = [
-          ...activeAllow.map((c) => PayrollComponent(
-            name: c.name, code: c.classificationCode, type: 'allowance',
-            section: c.allowanceSection,
-            amount: SalaryCalculator.calculateComponent(c, base),
-          )),
-          ...activeDeduct.map((c) => PayrollComponent(
-            name: c.name, code: c.classificationCode, type: 'deduction',
-            amount: SalaryCalculator.calculateComponent(c, base),
-          )),
-        ];
+        // For PEDO, split allowances and exclude Gross Claim from net calculation
+        final activeRegular = isPedo
+            ? activeAllow.where((c) => c.allowanceSection == 'regular' || c.allowanceSection == null).toList()
+            : activeAllow;
+        final activeOther = isPedo
+            ? activeAllow.where((c) => c.allowanceSection == 'other').toList()
+            : <SalaryComponent>[];
+        // Gross Claim is display-only — exclude from totalAllowances and net
+        final activeOtherForNet = isPedo
+            ? activeOther.where((c) => !c.name.toLowerCase().contains('gross claim')).toList()
+            : activeOther;
+
+        final totalAllow = SalaryCalculator.totalAllowances(activeRegular, base)
+            + (isPedo ? SalaryCalculator.totalAllowances(activeOtherForNet, base) : 0.0);
+        final totalDeduct = SalaryCalculator.totalDeductions(comps, base);
+        final net = base + totalAllow - totalDeduct;
+
+        List<PayrollComponent> snapshot;
+        if (isPedo) {
+          snapshot = [
+            ...activeRegular.map((c) => PayrollComponent(
+              name: c.name, code: c.classificationCode, type: 'allowance',
+              section: 'regular',
+              amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
+            )),
+            // All 'other' allowances — Gross Claim (user-entered) stored as normal component
+            ...activeOther.map((c) => PayrollComponent(
+              name: c.name, code: c.classificationCode, type: 'allowance',
+              section: 'other',
+              amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
+            )),
+            ...activeDeduct.map((c) => PayrollComponent(
+              name: c.name, code: c.classificationCode, type: 'deduction',
+              amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
+            )),
+          ];
+        } else {
+          snapshot = [
+            ...activeAllow.map((c) => PayrollComponent(
+              name: c.name, code: c.classificationCode, type: 'allowance',
+              section: c.allowanceSection,
+              amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
+            )),
+            ...activeDeduct.map((c) => PayrollComponent(
+              name: c.name, code: c.classificationCode, type: 'deduction',
+              amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
+            )),
+          ];
+        }
+
+        // Encode: PEDO records use PayrollSnapshot (includes pay bill codes);
+        // non-PEDO uses the legacy flat-array format.
+        final encodedSnapshot = isPedo
+            ? PayrollSnapshot(
+                components: snapshot,
+                basicMonthCode: emp.basicMonthCode,
+                basicPayCode1: emp.basicPayCode1,
+                basicPayCode2: emp.basicPayCode2,
+              ).encode()
+            : PayrollComponent.encodeSnapshot(snapshot);
 
         await _db.payrollRecordsDao.upsertRecord(PayrollRecordsCompanion(
           employeeId: Value(emp.id),
@@ -165,7 +236,7 @@ class _PayrollScreenState extends State<PayrollScreen> {
           totalAllowances: Value(totalAllow),
           totalDeductions: Value(totalDeduct),
           netSalary: Value(net),
-          salarySnapshot: Value(PayrollComponent.encodeSnapshot(snapshot)),
+          salarySnapshot: Value(encodedSnapshot),
           isLocked: const Value(true),
           processedAt: Value(now),
         ));
@@ -559,20 +630,21 @@ class _PayrollScreenState extends State<PayrollScreen> {
                   flex: 8,
                   child: Center(
                     child: isLocked
-                        ? TextButton(
+                        ? OutlinedButton.icon(
                             onPressed: () => _unlockEmployee(row),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFFED8936),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            icon: const Icon(Icons.lock_open_outlined, size: 14),
+                            label: const Text('Unlock', style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.orange.shade700,
+                              side: BorderSide(color: Colors.orange.shade300),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               minimumSize: Size.zero,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.lock_open_outlined, size: 13),
-                                SizedBox(width: 4),
-                                Text('Unlock', style: TextStyle(fontSize: 12)),
-                              ],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           )
                         : const SizedBox.shrink(),

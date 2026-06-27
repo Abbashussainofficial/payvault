@@ -101,15 +101,30 @@ class PrintService {
     required int year,
     String vNo = '',
   }) {
-    final comps           = PayrollComponent.parseSnapshot(record.salarySnapshot);
-    final regularAllow    = comps.where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null)).toList();
-    final otherAllow      = comps.where((c) => c.type == 'allowance' && c.section == 'other').toList();
-    final deductions      = comps.where((c) => c.type == 'deduction').toList();
-    final totRegular      = regularAllow.fold(0.0, (s, c) => s + c.amount);
-    final totOther        = otherAllow.fold(0.0, (s, c) => s + c.amount);
-    final period          = '${_monthNames[month - 1]}-$year';
-    final gross           = record.baseSalary + totRegular + totOther;
-    final net             = record.netSalary;
+    final ps           = PayrollSnapshot.parse(record.salarySnapshot);
+    final comps        = ps.components;
+    final regularAllow = comps
+        .where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    // All 'other' allowances sorted by sortOrder — Gross Claim is first (sortOrder=0)
+    final allOther = comps
+        .where((c) => c.type == 'allowance' && c.section == 'other')
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final grossClaimComp = allOther.where((c) =>
+        c.isAutoCalculated || c.name.toLowerCase().contains('gross claim')).firstOrNull;
+    final userOtherAllow = allOther.where((c) =>
+        !(c.isAutoCalculated || c.name.toLowerCase().contains('gross claim'))).toList();
+    final deductions   = comps.where((c) => c.type == 'deduction').toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final totRegular   = regularAllow.fold(0.0, (s, c) => s + c.amount);
+    final period       = '${_monthNames[month - 1]}-$year';
+    final net          = record.netSalary;
+    // Pay bill classification codes — from snapshot (historical) then employee fallback
+    final mCode  = (ps.basicMonthCode?.isNotEmpty == true ? ps.basicMonthCode : employee.basicMonthCode) ?? '00000';
+    final p1Code = (ps.basicPayCode1?.isNotEmpty == true ? ps.basicPayCode1 : employee.basicPayCode1) ?? '011000';
+    final p2Code = (ps.basicPayCode2?.isNotEmpty == true ? ps.basicPayCode2 : employee.basicPayCode2) ?? '01100';
     final bpsStr     = employee.bpsGrade != null ? 'BPS-${employee.bpsGrade}' : '';
     final dateStr    = record.processedAt.isEmpty
         ? '_________'
@@ -204,12 +219,15 @@ class PrintService {
           _buildPedoTable(
             record: record,
             regularAllowances: regularAllow,
-            otherAllowances: otherAllow,
+            grossClaimComp: grossClaimComp,
+            userOtherAllowances: userOtherAllow,
             totRegular: totRegular,
             deductions: deductions,
             period: period,
-            gross: gross,
             net: net,
+            basicMonthCode: mCode,
+            basicPayCode1: p1Code,
+            basicPayCode2: p2Code,
           ),
           pw.SizedBox(height: 28),
 
@@ -237,12 +255,15 @@ class PrintService {
   static pw.Widget _buildPedoTable({
     required PayrollRecord record,
     required List<PayrollComponent> regularAllowances,
-    required List<PayrollComponent> otherAllowances,
+    required PayrollComponent? grossClaimComp,
+    required List<PayrollComponent> userOtherAllowances,
     required double totRegular,
     required List<PayrollComponent> deductions,
     required String period,
-    required double gross,
     required double net,
+    required String basicMonthCode,
+    required String basicPayCode1,
+    required String basicPayCode2,
   }) {
     const colWidths = {
       0: pw.FlexColumnWidth(3.8),
@@ -332,8 +353,8 @@ class PrintService {
         ),
 
         // Pay period rows — no borders
-        dr('Pay for the Month of $period', '00000', 'Rs.', ''),
-        dr('', '011000', _fmt(record.baseSalary), _fmt(record.baseSalary)),
+        dr('Pay for the Month of $period', basicMonthCode, 'Rs.', ''),
+        dr('', basicPayCode1, _fmt(record.baseSalary), _fmt(record.baseSalary)),
 
         // "Pay....." + "Total Basic Salary" two-liner — border below
         pw.TableRow(
@@ -351,14 +372,11 @@ class PrintService {
                 ],
               ),
             ),
-            _pCell('01100', align: pw.TextAlign.center),
+            _pCell(basicPayCode2, align: pw.TextAlign.center),
             _pCell(_fmt(record.baseSalary), align: pw.TextAlign.right, bold: true),
             _pCell(_fmt(record.baseSalary), align: pw.TextAlign.right, bold: true),
           ],
         ),
-
-        // Blank row with code 02000 — no border
-        dr('', '02000', '', ''),
 
         // "Regular Allowance-" with code 02200 — no border
         lr('Regular Allowance-', '02200', underline: true),
@@ -371,38 +389,50 @@ class PrintService {
             _fmt(totRegular), _fmt(totRegular),
             bold: true, hasBorder: true),
 
-        // Budget code rows — border below each
-        dr('', '03000', '', '', hasBorder: true),
-        dr('', '00000', _fmt(gross), _fmt(gross), bold: true, hasBorder: true),
+        // Two blank classification rows matching the government pay bill format
+        dr('', '03000', '', '', hasBorder: false),
+        dr('', '00000', '', '', hasBorder: true),
 
         // Other Allowance — no border
         sr('Other Allowance', underline: true),
 
-        // Dynamic other allowances (indented) — border on last; placeholder if empty
-        ...List.generate(
-          otherAllowances.isNotEmpty ? otherAllowances.length : 1,
-          (i) {
-            if (otherAllowances.isEmpty) {
-              return dr('', '', '', '', indent: true, hasBorder: true);
-            }
-            final c = otherAllowances[i];
-            return dr(c.name, c.code ?? '', _fmt(c.amount), _fmt(c.amount),
-                indent: true, hasBorder: i == otherAllowances.length - 1);
-          },
-        ),
+        // Gross Claim — user-entered, always first (sortOrder=0)
+        if (grossClaimComp != null)
+          dr(
+            grossClaimComp.name,
+            grossClaimComp.code ?? '',
+            _fmt(grossClaimComp.amount),
+            _fmt(grossClaimComp.amount),
+            indent: true,
+            hasBorder: userOtherAllowances.isEmpty,
+          ),
+
+        // Additional other allowances (non-gross)
+        ...List.generate(userOtherAllowances.length, (i) {
+          final c = userOtherAllowances[i];
+          return dr(c.name, c.code ?? '', _fmt(c.amount), _fmt(c.amount),
+              indent: true, hasBorder: i == userOtherAllowances.length - 1);
+        }),
+
+        // If no other allowances at all, close section with border
+        if (grossClaimComp == null && userOtherAllowances.isEmpty)
+          dr('', '', '', '', hasBorder: true),
 
         // Less-Fund deduction — no border
         sr('Less -Fund deduction', underline: true),
 
-        // Dynamic deductions (indented) — border only on last
-        ...List.generate(deductions.length, (i) => dr(
-          deductions[i].name,
-          deductions[i].code ?? '',
-          amtOrDash(deductions[i].amount),
-          amtOrDash(deductions[i].amount),
-          indent: true,
-          hasBorder: i == deductions.length - 1,
-        )),
+        // Deductions — skip zero-amount rows (Issue 4)
+        ...() {
+          final visible = deductions.where((d) => d.amount > 0).toList();
+          return List.generate(visible.length, (i) => dr(
+            visible[i].name,
+            visible[i].code ?? '',
+            amtOrDash(visible[i].amount),
+            amtOrDash(visible[i].amount),
+            indent: true,
+            hasBorder: i == visible.length - 1,
+          ));
+        }(),
 
         // Summary rows — border below each
         dr('Total Deduction:................................', '',

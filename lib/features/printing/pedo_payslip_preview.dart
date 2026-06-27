@@ -9,6 +9,7 @@ import '../../core/utils/salary_calculator.dart';
 class PedoPayslipPreview extends StatelessWidget {
   final Employee employee;
   final List<PayrollComponent> regularAllowances;
+  // All Other Allowances — Gross Claim (user-entered, sortOrder=0) plus any additional
   final List<PayrollComponent> otherAllowances;
   final List<PayrollComponent> deductions;
   final double baseSalary;
@@ -16,6 +17,10 @@ class PedoPayslipPreview extends StatelessWidget {
   final int year;
   final String vNo;
   final String date;
+  // Pay bill classification codes (optional; fall back to KPK defaults if null)
+  final String? basicMonthCode;
+  final String? basicPayCode1;
+  final String? basicPayCode2;
 
   const PedoPayslipPreview({
     super.key,
@@ -26,9 +31,19 @@ class PedoPayslipPreview extends StatelessWidget {
     required this.baseSalary,
     required this.month,
     required this.year,
+    this.basicMonthCode,
+    this.basicPayCode1,
+    this.basicPayCode2,
     this.vNo = '',
     this.date = '',
   });
+
+  /// Identify the auto-calculated Gross Claim component (supports old snapshots by name).
+  static bool _isGrossClaim(PayrollComponent c) =>
+      c.isAutoCalculated ||
+      (c.type == 'allowance' &&
+          c.section == 'other' &&
+          c.name.toLowerCase().contains('gross claim'));
 
   factory PedoPayslipPreview.fromRecord({
     Key? key,
@@ -38,25 +53,38 @@ class PedoPayslipPreview extends StatelessWidget {
     required int year,
     String vNo = '',
   }) {
-    final comps = PayrollComponent.parseSnapshot(record.salarySnapshot);
+    final ps = PayrollSnapshot.parse(record.salarySnapshot);
+    final comps = ps.components;
+
     final regular = comps
         .where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null))
-        .toList();
-    final other = comps
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    // All 'other' allowances — Gross Claim (user-entered, sortOrder=0) comes first by sort
+    final allOther = comps
         .where((c) => c.type == 'allowance' && c.section == 'other')
-        .toList();
-    final deductions = comps.where((c) => c.type == 'deduction').toList();
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    final deds = comps.where((c) => c.type == 'deduction').toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
     return PedoPayslipPreview(
       key: key,
       employee: employee,
       regularAllowances: regular,
-      otherAllowances: other,
-      deductions: deductions,
+      otherAllowances: allOther,
+      deductions: deds,
       baseSalary: record.baseSalary,
       month: month,
       year: year,
       vNo: vNo,
       date: record.processedAt,
+      // Use codes from snapshot (preserves historical state); fall back to employee
+      basicMonthCode: ps.basicMonthCode ?? employee.basicMonthCode,
+      basicPayCode1: ps.basicPayCode1 ?? employee.basicPayCode1,
+      basicPayCode2: ps.basicPayCode2 ?? employee.basicPayCode2,
     );
   }
 
@@ -69,6 +97,7 @@ class PedoPayslipPreview extends StatelessWidget {
     String vNo = '',
   }) {
     final base = employee.baseSalary;
+    // Components from the DAO are already sorted by sortOrder
     final regular = components
         .where((c) => c.componentType == 'allowance' && c.isActive &&
                       (c.allowanceSection == 'regular' || c.allowanceSection == null))
@@ -78,9 +107,11 @@ class PedoPayslipPreview extends StatelessWidget {
               type: 'allowance',
               section: 'regular',
               amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
             ))
         .toList();
-    final other = components
+    // All 'other' allowances — includes user-entered Gross Claim (sortOrder=0 = first)
+    final allOther = components
         .where((c) => c.componentType == 'allowance' && c.isActive &&
                       c.allowanceSection == 'other')
         .map((c) => PayrollComponent(
@@ -89,27 +120,33 @@ class PedoPayslipPreview extends StatelessWidget {
               type: 'allowance',
               section: 'other',
               amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
             ))
         .toList();
-    final deductions = components
+    final deds = components
         .where((c) => c.componentType == 'deduction' && c.isActive)
         .map((c) => PayrollComponent(
               name: c.name,
               code: c.classificationCode,
               type: 'deduction',
               amount: SalaryCalculator.calculateComponent(c, base),
+              sortOrder: c.sortOrder,
             ))
         .toList();
+
     return PedoPayslipPreview(
       key: key,
       employee: employee,
       regularAllowances: regular,
-      otherAllowances: other,
-      deductions: deductions,
+      otherAllowances: allOther,
+      deductions: deds,
       baseSalary: base,
       month: month,
       year: year,
       vNo: vNo,
+      basicMonthCode: employee.basicMonthCode,
+      basicPayCode1: employee.basicPayCode1,
+      basicPayCode2: employee.basicPayCode2,
     );
   }
 
@@ -143,12 +180,14 @@ class PedoPayslipPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totRegular = regularAllowances.fold(0.0, (s, c) => s + c.amount);
-    final totOther   = otherAllowances.fold(0.0, (s, c) => s + c.amount);
     final totDeduct  = deductions.fold(0.0, (s, c) => s + c.amount);
-    final gross      = baseSalary + totRegular + totOther;
-    final net        = gross - totDeduct;
-    final period     = '${_months[month - 1]}-$year';
-    final dateStr    = _fmtDate(date);
+    // Net excludes Gross Claim (display-only row)
+    final totOtherForNet = otherAllowances
+        .where((c) => !_isGrossClaim(c))
+        .fold(0.0, (s, c) => s + c.amount);
+    final net    = baseSalary + totRegular + totOtherForNet - totDeduct;
+    final period = '${_months[month - 1]}-$year';
+    final dateStr = _fmtDate(date);
 
     return ColoredBox(
       color: const Color(0xFF9E9E9E),
@@ -175,7 +214,7 @@ class PedoPayslipPreview extends StatelessWidget {
                   children: [
                     _buildHeader(dateStr),
                     const SizedBox(height: 9),
-                    _buildTable(period, totRegular, gross, totDeduct, net),
+                    _buildTable(period, totRegular, totDeduct, net),
                     const SizedBox(height: 34),
                     _buildSignature(),
                   ],
@@ -198,7 +237,6 @@ class PedoPayslipPreview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // V. No / Date — top right
         Align(
           alignment: Alignment.topRight,
           child: Column(
@@ -210,8 +248,6 @@ class PedoPayslipPreview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-
-        // Title
         Text(
           'PAY BILL OF GOVERNMENT OFFICER,',
           style: _ts.copyWith(fontWeight: FontWeight.bold, fontSize: 12),
@@ -223,8 +259,6 @@ class PedoPayslipPreview extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 5),
-
-        // Disclaimer
         Text(
           'Note:-Government accepts no responsibility for any fraud, miss-appropriation in '
           'respect of money or cheque bill made over to a messenger.',
@@ -232,8 +266,6 @@ class PedoPayslipPreview extends StatelessWidget {
           textAlign: TextAlign.justify,
         ),
         const SizedBox(height: 5),
-
-        // Name line — name/designation/dept underlined
         RichText(
           text: TextSpan(
             style: _ts.copyWith(fontSize: 9.5),
@@ -253,8 +285,6 @@ class PedoPayslipPreview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-
-        // BPS / scale centered bold
         if (bpsStr.isNotEmpty)
           Text(
             '($bpsStr)  (${_f(baseSalary)})',
@@ -262,7 +292,6 @@ class PedoPayslipPreview extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         const SizedBox(height: 2),
-
         Text(
           'B/Head: Revenue/Profit of PEDO, Service Charged Levied on Expenditure incurred on',
           style: _ts.copyWith(fontSize: 9.5),
@@ -285,77 +314,82 @@ class PedoPayslipPreview extends StatelessWidget {
   Widget _buildTable(
     String period,
     double totRegular,
-    double gross,
     double totDeduct,
     double net,
   ) {
+    // Identify Gross Claim (user-entered, always first by sortOrder=0)
+    final grossClaimComp = otherAllowances.where(_isGrossClaim).firstOrNull;
+    final otherNonGross  = otherAllowances.where((c) => !_isGrossClaim(c)).toList();
+    // Filter zero-amount deductions
+    final visibleDeductions = deductions.where((d) => d.amount > 0).toList();
+    // Resolved codes — user-configured values with KPK standard defaults
+    final mCode  = basicMonthCode?.isNotEmpty == true ? basicMonthCode! : '00000';
+    final p1Code = basicPayCode1?.isNotEmpty  == true ? basicPayCode1!  : '011000';
+    final p2Code = basicPayCode2?.isNotEmpty  == true ? basicPayCode2!  : '01100';
+
     return Container(
       decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 0.7)),
       child: Column(
         children: [
-          // Header row — border below (thick)
           _headRow(),
-
-          // Pay period rows — NO borders
-          _dataRow('Pay for the Month of $period', '00000', 'Rs.', ''),
-          _dataRow('', '011000', _f(baseSalary), _f(baseSalary)),
-
-          // "Pay....." + "Total Basic Salary" two-liner — border below
-          _twoLineRow(),
-
-          // Blank row with code 02000 — no border
-          _dataRow('', '02000', '', ''),
-
-          // "Regular Allowance-" with code 02200 — no border
+          _dataRow('Pay for the Month of $period', mCode, 'Rs.', ''),
+          _dataRow('', p1Code, _f(baseSalary), _f(baseSalary)),
+          _twoLineRow(p2Code),
           _labelRow('Regular Allowance-', '02200', underline: true),
 
-          // Dynamic regular allowances — no borders
           for (final c in regularAllowances)
             _dataRow(_dotPad(c.name), c.code ?? '', _f(c.amount), _f(c.amount)),
 
-          // Total Regular Allowances — border below
           _dataRow(
             'Total Regular Allowances', '02000',
             _f(totRegular), _f(totRegular),
             bold: true, hasBorder: true,
           ),
+          // Two blank classification rows matching the government pay bill format
+          _dataRow('', '03000', '', '', hasBorder: false),
+          _dataRow('', '00000', '', '', hasBorder: true),
 
-          // Budget code rows — border below each
-          _dataRow('', '03000', '', '', hasBorder: true),
-          _dataRow('', '00000', _f(gross), _f(gross), bold: true, hasBorder: true),
-
-          // Other Allowance section — no border
           _sectionRow('Other Allowance', underline: true),
 
-          // Dynamic other allowances (indented) — border on last; placeholder if empty
-          if (otherAllowances.isNotEmpty)
-            for (int i = 0; i < otherAllowances.length; i++)
-              _dataRow(
-                _dotPad(otherAllowances[i].name),
-                otherAllowances[i].code ?? '',
-                _f(otherAllowances[i].amount),
-                _f(otherAllowances[i].amount),
-                indent: true,
-                hasBorder: i == otherAllowances.length - 1,
-              )
-          else
-            _dataRow('', '', '', '', indent: true, hasBorder: true),
-
-          // Less-Fund deduction section — no border
-          _sectionRow('Less -Fund deduction', underline: true),
-
-          // Dynamic deductions (indented) — border only on last
-          for (int i = 0; i < deductions.length; i++)
+          // Gross Claim — user-entered, always first (sortOrder=0)
+          if (grossClaimComp != null)
             _dataRow(
-              _dotPad(deductions[i].name),
-              deductions[i].code ?? '',
-              _amtOrDash(deductions[i].amount),
-              _amtOrDash(deductions[i].amount),
+              _dotPad(grossClaimComp.name),
+              grossClaimComp.code ?? '',
+              _f(grossClaimComp.amount),
+              _f(grossClaimComp.amount),
               indent: true,
-              hasBorder: i == deductions.length - 1,
+              hasBorder: otherNonGross.isEmpty,
             ),
 
-          // Summary rows — border below each
+          // Additional Other Allowances (non-gross, sorted by sortOrder)
+          for (int i = 0; i < otherNonGross.length; i++)
+            _dataRow(
+              _dotPad(otherNonGross[i].name),
+              otherNonGross[i].code ?? '',
+              _f(otherNonGross[i].amount),
+              _f(otherNonGross[i].amount),
+              indent: true,
+              hasBorder: i == otherNonGross.length - 1,
+            ),
+
+          // If no other allowances exist at all, still close the section with a border
+          if (grossClaimComp == null && otherNonGross.isEmpty)
+            _dataRow('', '', '', '', hasBorder: true),
+
+          _sectionRow('Less -Fund deduction', underline: true),
+
+          // Deductions — skip zero-amount rows
+          for (int i = 0; i < visibleDeductions.length; i++)
+            _dataRow(
+              _dotPad(visibleDeductions[i].name),
+              visibleDeductions[i].code ?? '',
+              _amtOrDash(visibleDeductions[i].amount),
+              _amtOrDash(visibleDeductions[i].amount),
+              indent: true,
+              hasBorder: i == visibleDeductions.length - 1,
+            ),
+
           _dataRow(
             'Total Deduction:................................',
             '', _f(totDeduct), _f(totDeduct),
@@ -366,8 +400,6 @@ class PedoPayslipPreview extends StatelessWidget {
             '', _f(net), _f(net),
             bold: true, hasBorder: true,
           ),
-
-          // Total Net Amount Payable — NO inner border (outer table bottom is the line)
           _dataRow(
             'Total Net Amount Payable.......................',
             '', _f(net), _f(net),
@@ -401,7 +433,7 @@ class PedoPayslipPreview extends StatelessWidget {
     );
   }
 
-  Widget _twoLineRow() {
+  Widget _twoLineRow(String code) {
     return _withBorder(
       hasBorder: true,
       child: IntrinsicHeight(
@@ -421,7 +453,7 @@ class PedoPayslipPreview extends StatelessWidget {
               ),
             ),
             _vl(),
-            SizedBox(width: _codeW, child: _cell('01100', center: true)),
+            SizedBox(width: _codeW, child: _cell(code, center: true)),
             _vl(),
             SizedBox(width: _rateW, child: _cell(_f(baseSalary), right: true, bold: true)),
             _vl(),
@@ -432,7 +464,6 @@ class PedoPayslipPreview extends StatelessWidget {
     );
   }
 
-  // Standard 4-column data row — hasBorder: false by default
   Widget _dataRow(
     String desc,
     String code,
@@ -462,7 +493,6 @@ class PedoPayslipPreview extends StatelessWidget {
     );
   }
 
-  // Label + code row (for section headers that have a code in the code column)
   Widget _labelRow(String label, String code, {bool underline = false, bool hasBorder = false}) {
     return _withBorder(
       hasBorder: hasBorder,
@@ -483,7 +513,6 @@ class PedoPayslipPreview extends StatelessWidget {
     );
   }
 
-  // Full-width section header with vertical column separators — never has a bottom border
   Widget _sectionRow(String label, {bool underline = false}) {
     return IntrinsicHeight(
       child: Row(
