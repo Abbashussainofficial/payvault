@@ -345,7 +345,7 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
     final isActive = _employee.status == 'active';
 
     return Material(
-      color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF5F7FA),
+      color: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F7FA),
       child: StreamBuilder<List<SalaryComponent>>(
         stream: AppDatabase.instance.salaryComponentsDao
             .watchComponentsByEmployee(_employee.id),
@@ -511,16 +511,16 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
                                     children: [
                                       _badge(
                                         'ID: ${_employee.employeeId}',
-                                        const Color(0xFF1565C0),
+                                        isDark ? const Color(0xFF4D8FD6) : const Color(0xFF1565C0),
+                                        isDark: isDark,
                                       ),
                                       const SizedBox(width: 8),
                                       _badge(
+                                        isActive ? 'Active Contract' : 'Inactive',
                                         isActive
-                                            ? 'Active Contract'
-                                            : 'Inactive',
-                                        isActive
-                                            ? const Color(0xFF27AE60)
-                                            : cs.error,
+                                            ? (isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60))
+                                            : (isDark ? const Color(0xFFE05555) : cs.error),
+                                        isDark: isDark,
                                       ),
                                     ],
                                   ),
@@ -1211,13 +1211,13 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
     );
   }
 
-  Widget _badge(String label, Color color) {
+  Widget _badge(String label, Color color, {bool isDark = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withValues(alpha: isDark ? 0.22 : 0.1),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        border: Border.all(color: color.withValues(alpha: isDark ? 0.38 : 0.2)),
       ),
       child: Text(
         label,
@@ -1708,29 +1708,29 @@ class _ComponentRowState extends State<_ComponentRow> {
                       ),
                       decoration: BoxDecoration(
                         color: isFrozen
-                            ? const Color(0xFF1565C0).withValues(alpha: 0.1)
-                            : const Color(0xFF27AE60).withValues(alpha: 0.1),
+                            ? (widget.isDark ? const Color(0xFF1A2E4A) : const Color(0xFF1565C0).withValues(alpha: 0.1))
+                            : (widget.isDark ? const Color(0xFF1A3D2B) : const Color(0xFF27AE60).withValues(alpha: 0.1)),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isFrozen
-                              ? const Color(0xFF1565C0).withValues(alpha: 0.25)
-                              : const Color(0xFF27AE60).withValues(alpha: 0.25),
+                              ? (widget.isDark ? const Color(0xFF5BA3D9).withValues(alpha: 0.35) : const Color(0xFF1565C0).withValues(alpha: 0.25))
+                              : (widget.isDark ? const Color(0xFF4CAF82).withValues(alpha: 0.35) : const Color(0xFF27AE60).withValues(alpha: 0.25)),
                         ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (isFrozen)
-                            const Icon(
+                            Icon(
                               Icons.ac_unit,
                               size: 9,
-                              color: Color(0xFF1565C0),
+                              color: widget.isDark ? const Color(0xFF5BA3D9) : const Color(0xFF1565C0),
                             ),
                           if (!isFrozen)
-                            const Icon(
+                            Icon(
                               Icons.circle,
                               size: 6,
-                              color: Color(0xFF27AE60),
+                              color: widget.isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60),
                             ),
                           const SizedBox(width: 4),
                           Text(
@@ -1740,8 +1740,8 @@ class _ComponentRowState extends State<_ComponentRow> {
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.5,
                               color: isFrozen
-                                  ? const Color(0xFF1565C0)
-                                  : const Color(0xFF27AE60),
+                                  ? (widget.isDark ? const Color(0xFF5BA3D9) : const Color(0xFF1565C0))
+                                  : (widget.isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60)),
                             ),
                           ),
                         ],

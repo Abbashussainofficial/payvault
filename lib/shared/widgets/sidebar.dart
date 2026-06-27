@@ -97,37 +97,39 @@ class _SidebarState extends State<Sidebar> {
   // ── Theme helpers ─────────────────────────────────────────────────────────
 
   Color _bg(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? const Color(0xFF1E1E2E)
+      ? const Color(0xFF161B27)
       : Colors.white;
 
-  Color _activeItemBg(BuildContext ctx) => Theme.of(ctx).colorScheme.primary;
+  Color _activeItemBg(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
+      ? const Color(0xFF2D4A7A)
+      : Theme.of(ctx).colorScheme.primary;
 
   Color _inactiveText(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? const Color(0xFF94A3B8)
+      ? const Color(0xFF8B93AA)
       : const Color(0xFF475569);
 
   Color _inactiveIcon(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? const Color(0xFF64748B)
+      ? const Color(0xFF8B93AA)
       : const Color(0xFF94A3B8);
 
   Color _sectionLabel(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? const Color(0xFF4A5568)
+      ? const Color(0xFF5A6280)
       : const Color(0xFFB0BEC5);
 
   Color _divider(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? Colors.white.withValues(alpha: 0.08)
+      ? const Color(0xFF252D40)
       : const Color(0xFFE8ECF0);
 
   Color _hoverBg(BuildContext ctx) => Theme.of(ctx).brightness == Brightness.dark
-      ? Colors.white.withValues(alpha: 0.05)
+      ? const Color(0xFF1E2840)
       : const Color(0xFFF1F5F9);
 
   // ── Logo ──────────────────────────────────────────────────────────────────
 
   Widget _logo(BuildContext ctx) {
     final isDark = Theme.of(ctx).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subColor = isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
+    final titleColor = isDark ? const Color(0xFFE8EAF0) : const Color(0xFF1A1A2E);
+    final subColor = isDark ? const Color(0xFF5A6280) : const Color(0xFF94A3B8);
 
     return Container(
       height: 64,
@@ -313,8 +315,8 @@ class _SidebarState extends State<Sidebar> {
     final themeProvider = ctx.watch<ThemeProvider>();
     final auth = ctx.read<AuthProvider>();
     final isDark = Theme.of(ctx).brightness == Brightness.dark;
-    final titleColor = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1A1A2E);
-    final subColor = isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8);
+    final titleColor = isDark ? const Color(0xFFE8EAF0) : const Color(0xFF1A1A2E);
+    final subColor = isDark ? const Color(0xFF5A6280) : const Color(0xFF94A3B8);
     final divColor = _divider(ctx);
 
     return Column(
@@ -375,7 +377,7 @@ class _SidebarState extends State<Sidebar> {
         // Logout row
         InkWell(
           onTap: auth.logout,
-          hoverColor: const Color(0xFFFFE5E5),
+          hoverColor: isDark ? const Color(0xFF3D1A1A) : const Color(0xFFFFE5E5),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(

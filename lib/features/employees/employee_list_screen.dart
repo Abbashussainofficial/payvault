@@ -275,7 +275,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
     final label = _labels[widget.category] ?? widget.category;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF5F7FA),
+      backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F7FA),
       body: StreamBuilder<List<Employee>>(
         stream: AppDatabase.instance.employeesDao.watchEmployeesByCategory(widget.category),
         builder: (context, snapshot) {
@@ -296,7 +296,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
             children: [
               // ── Header ──────────────────────────────────────────────────────
               Container(
-                color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+                color: isDark ? const Color(0xFF141924) : Colors.white,
                 padding: const EdgeInsets.fromLTRB(24, 14, 20, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +380,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
 
               // ── Toolbar ─────────────────────────────────────────────────────
               Container(
-                color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+                color: isDark ? const Color(0xFF141924) : Colors.white,
                 padding: const EdgeInsets.fromLTRB(24, 0, 20, 14),
                 child: Row(
                   children: [
@@ -456,7 +456,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                       Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+                            color: isDark ? const Color(0xFF141924) : Colors.white,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
                           ),
@@ -730,7 +730,9 @@ class _TableRow extends StatelessWidget {
                         width: 7, height: 7,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isActive ? const Color(0xFF27AE60) : const Color(0xFFE53E3E),
+                          color: isActive
+                              ? (isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60))
+                              : (isDark ? const Color(0xFFE05555) : const Color(0xFFE53E3E)),
                         ),
                       ),
                       const SizedBox(width: 7),
@@ -738,15 +740,17 @@ class _TableRow extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: isActive
-                              ? const Color(0xFF27AE60).withValues(alpha: 0.1)
-                              : const Color(0xFFE53E3E).withValues(alpha: 0.1),
+                              ? (isDark ? const Color(0xFF1A3D2B) : const Color(0xFF27AE60).withValues(alpha: 0.1))
+                              : (isDark ? const Color(0xFF3D1A1A) : const Color(0xFFE53E3E).withValues(alpha: 0.1)),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           isActive ? 'Active' : 'Inactive',
                           style: TextStyle(
                             fontSize: 11, fontWeight: FontWeight.w600,
-                            color: isActive ? const Color(0xFF27AE60) : const Color(0xFFE53E3E),
+                            color: isActive
+                                ? (isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60))
+                                : (isDark ? const Color(0xFFE05555) : const Color(0xFFE53E3E)),
                           ),
                         ),
                       ),
@@ -987,7 +991,7 @@ class _CategoryPopupDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.fromLTRB(24, 18, 16, 18),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+                color: isDark ? const Color(0xFF141924) : Colors.white,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Row(
@@ -1116,22 +1120,27 @@ class _CategoryPopupDialog extends StatelessWidget {
                                     width: 7, height: 7,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: isActive ? const Color(0xFF27AE60) : const Color(0xFFE53E3E),
+                                      color: isActive
+                                          ? (isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60))
+                                          : (isDark ? const Color(0xFFE05555) : const Color(0xFFE53E3E)),
                                     ),
                                   ),
                                   const SizedBox(width: 7),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: (isActive ? const Color(0xFF27AE60) : const Color(0xFFE53E3E))
-                                          .withValues(alpha: 0.1),
+                                      color: isActive
+                                          ? (isDark ? const Color(0xFF1A3D2B) : const Color(0xFF27AE60).withValues(alpha: 0.1))
+                                          : (isDark ? const Color(0xFF3D1A1A) : const Color(0xFFE53E3E).withValues(alpha: 0.1)),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
                                       isActive ? 'Active' : 'Inactive',
                                       style: TextStyle(
                                         fontSize: 11, fontWeight: FontWeight.w600,
-                                        color: isActive ? const Color(0xFF27AE60) : const Color(0xFFE53E3E),
+                                        color: isActive
+                                            ? (isDark ? const Color(0xFF4CAF82) : const Color(0xFF27AE60))
+                                            : (isDark ? const Color(0xFFE05555) : const Color(0xFFE53E3E)),
                                       ),
                                     ),
                                   ),
@@ -1359,7 +1368,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+        color: isDark ? const Color(0xFF141924) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
       ),
