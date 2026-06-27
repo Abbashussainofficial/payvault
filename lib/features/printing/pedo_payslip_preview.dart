@@ -21,6 +21,7 @@ class PedoPayslipPreview extends StatelessWidget {
   final String? basicMonthCode;
   final String? basicPayCode1;
   final String? basicPayCode2;
+  final String? grossClaimCode;
 
   const PedoPayslipPreview({
     super.key,
@@ -34,16 +35,10 @@ class PedoPayslipPreview extends StatelessWidget {
     this.basicMonthCode,
     this.basicPayCode1,
     this.basicPayCode2,
+    this.grossClaimCode,
     this.vNo = '',
     this.date = '',
   });
-
-  /// Identify the auto-calculated Gross Claim component (supports old snapshots by name).
-  static bool _isGrossClaim(PayrollComponent c) =>
-      c.isAutoCalculated ||
-      (c.type == 'allowance' &&
-          c.section == 'other' &&
-          c.name.toLowerCase().contains('gross claim'));
 
   factory PedoPayslipPreview.fromRecord({
     Key? key,
@@ -61,9 +56,10 @@ class PedoPayslipPreview extends StatelessWidget {
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-    // All 'other' allowances — Gross Claim (user-entered, sortOrder=0) comes first by sort
+    // User-added other allowances only (Gross Claim is auto-calculated, not stored)
     final allOther = comps
-        .where((c) => c.type == 'allowance' && c.section == 'other')
+        .where((c) => c.type == 'allowance' && c.section == 'other' &&
+                      !c.name.toLowerCase().contains('gross claim'))
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
@@ -85,6 +81,7 @@ class PedoPayslipPreview extends StatelessWidget {
       basicMonthCode: ps.basicMonthCode ?? employee.basicMonthCode,
       basicPayCode1: ps.basicPayCode1 ?? employee.basicPayCode1,
       basicPayCode2: ps.basicPayCode2 ?? employee.basicPayCode2,
+      grossClaimCode: employee.grossClaimCode,
     );
   }
 
@@ -110,7 +107,7 @@ class PedoPayslipPreview extends StatelessWidget {
               sortOrder: c.sortOrder,
             ))
         .toList();
-    // All 'other' allowances — includes user-entered Gross Claim (sortOrder=0 = first)
+    // User-added other allowances (Gross Claim is auto-calculated, not stored)
     final allOther = components
         .where((c) => c.componentType == 'allowance' && c.isActive &&
                       c.allowanceSection == 'other')
@@ -147,6 +144,7 @@ class PedoPayslipPreview extends StatelessWidget {
       basicMonthCode: employee.basicMonthCode,
       basicPayCode1: employee.basicPayCode1,
       basicPayCode2: employee.basicPayCode2,
+      grossClaimCode: employee.grossClaimCode,
     );
   }
 
@@ -179,13 +177,11 @@ class PedoPayslipPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totRegular = regularAllowances.fold(0.0, (s, c) => s + c.amount);
-    final totDeduct  = deductions.fold(0.0, (s, c) => s + c.amount);
-    // Net excludes Gross Claim (display-only row)
-    final totOtherForNet = otherAllowances
-        .where((c) => !_isGrossClaim(c))
-        .fold(0.0, (s, c) => s + c.amount);
-    final net    = baseSalary + totRegular + totOtherForNet - totDeduct;
+    final totRegular   = regularAllowances.fold(0.0, (s, c) => s + c.amount);
+    final totDeduct    = deductions.fold(0.0, (s, c) => s + c.amount);
+    final totUserOther = otherAllowances.fold(0.0, (s, c) => s + c.amount);
+    final grossClaimAmt = baseSalary + totRegular + totUserOther;
+    final net    = baseSalary + totRegular + totUserOther - totDeduct;
     final period = '${_months[month - 1]}-$year';
     final dateStr = _fmtDate(date);
 
@@ -214,7 +210,7 @@ class PedoPayslipPreview extends StatelessWidget {
                   children: [
                     _buildHeader(dateStr),
                     const SizedBox(height: 9),
-                    _buildTable(period, totRegular, totDeduct, net),
+                    _buildTable(period, totRegular, totDeduct, net, grossClaimAmt),
                     const SizedBox(height: 34),
                     _buildSignature(),
                   ],
@@ -316,10 +312,8 @@ class PedoPayslipPreview extends StatelessWidget {
     double totRegular,
     double totDeduct,
     double net,
+    double grossClaimAmt,
   ) {
-    // Identify Gross Claim (user-entered, always first by sortOrder=0)
-    final grossClaimComp = otherAllowances.where(_isGrossClaim).firstOrNull;
-    final otherNonGross  = otherAllowances.where((c) => !_isGrossClaim(c)).toList();
     // Filter zero-amount deductions
     final visibleDeductions = deductions.where((d) => d.amount > 0).toList();
     // Resolved codes — user-configured values with KPK standard defaults
@@ -345,37 +339,29 @@ class PedoPayslipPreview extends StatelessWidget {
             _f(totRegular), _f(totRegular),
             bold: true, hasBorder: true,
           ),
-          // Two blank classification rows matching the government pay bill format
-          _dataRow('', '03000', '', '', hasBorder: false),
-          _dataRow('', '00000', '', '', hasBorder: true),
 
           _sectionRow('Other Allowance', underline: true),
 
-          // Gross Claim — user-entered, always first (sortOrder=0)
-          if (grossClaimComp != null)
-            _dataRow(
-              _dotPad(grossClaimComp.name),
-              grossClaimComp.code ?? '',
-              _f(grossClaimComp.amount),
-              _f(grossClaimComp.amount),
-              indent: true,
-              hasBorder: otherNonGross.isEmpty,
-            ),
+          // Gross Claim — always auto-calculated (never stored in components)
+          _dataRow(
+            _dotPad('Gross claim-Establishment charges'),
+            grossClaimCode ?? '',
+            _f(grossClaimAmt),
+            _f(grossClaimAmt),
+            indent: true,
+            hasBorder: otherAllowances.isEmpty,
+          ),
 
-          // Additional Other Allowances (non-gross, sorted by sortOrder)
-          for (int i = 0; i < otherNonGross.length; i++)
+          // User-added other allowances
+          for (int i = 0; i < otherAllowances.length; i++)
             _dataRow(
-              _dotPad(otherNonGross[i].name),
-              otherNonGross[i].code ?? '',
-              _f(otherNonGross[i].amount),
-              _f(otherNonGross[i].amount),
+              _dotPad(otherAllowances[i].name),
+              otherAllowances[i].code ?? '',
+              _f(otherAllowances[i].amount),
+              _f(otherAllowances[i].amount),
               indent: true,
-              hasBorder: i == otherNonGross.length - 1,
+              hasBorder: i == otherAllowances.length - 1,
             ),
-
-          // If no other allowances exist at all, still close the section with a border
-          if (grossClaimComp == null && otherNonGross.isEmpty)
-            _dataRow('', '', '', '', hasBorder: true),
 
           _sectionRow('Less -Fund deduction', underline: true),
 

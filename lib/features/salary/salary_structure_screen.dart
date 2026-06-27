@@ -98,6 +98,9 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
     final code2Ctrl = TextEditingController(
       text: _employee.basicPayCode2 ?? '',
     );
+    final grossCtrl = TextEditingController(
+      text: _employee.grossClaimCode ?? '',
+    );
 
     final ok = await showDialog<bool>(
       context: context,
@@ -144,6 +147,16 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
                 hintText: 'e.g. 01100',
                 helperText: '"Pay … / Total Basic Salary" two-line row',
               ),
+              onSubmitted: (_) => FocusScope.of(ctx).nextFocus(),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: grossCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Gross Claim Code (Optional)',
+                hintText: 'e.g. 00000',
+                helperText: '"Gross claim-Establishment charges" row',
+              ),
               onSubmitted: (_) => Navigator.pop(ctx, true),
             ),
           ],
@@ -168,6 +181,7 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
       basicMonthCode: Value(n(monthCtrl)),
       basicPayCode1: Value(n(code1Ctrl)),
       basicPayCode2: Value(n(code2Ctrl)),
+      grossClaimCode: Value(n(grossCtrl)),
     );
     await AppDatabase.instance.employeesDao.updateEmployee(updated);
     if (!mounted) return;
@@ -719,6 +733,12 @@ class _SalaryStructureScreenState extends State<SalaryStructureScreen> {
                                   _codeChip(
                                     'Pay 2',
                                     _employee.basicPayCode2,
+                                    cs,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _codeChip(
+                                    'Gross Claim',
+                                    _employee.grossClaimCode,
                                     cs,
                                   ),
                                   const Spacer(),

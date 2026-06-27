@@ -48,7 +48,10 @@ class _MainShellState extends State<MainShell> {
               category: cat,
               onViewEmployee: _viewEmployee,
             ),
-          'add' => EmployeeFormScreen(category: cat),
+          'add' => EmployeeFormScreen(
+              category: cat,
+              onBack: () => _setRoute(NavRoute.cat(cat, 'list')),
+            ),
           'payroll' => PayrollScreen(category: cat),
           'reports' => PrintScreen(category: cat),
           'templates' => const TemplateListScreen(),

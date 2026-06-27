@@ -107,20 +107,20 @@ class PrintService {
         .where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null))
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    // All 'other' allowances sorted by sortOrder — Gross Claim is first (sortOrder=0)
-    final allOther = comps
-        .where((c) => c.type == 'allowance' && c.section == 'other')
+    // User-added other allowances (Gross Claim is auto-calculated, not stored)
+    final userOtherAllow = comps
+        .where((c) => c.type == 'allowance' && c.section == 'other' &&
+                      !c.name.toLowerCase().contains('gross claim'))
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final grossClaimComp = allOther.where((c) =>
-        c.isAutoCalculated || c.name.toLowerCase().contains('gross claim')).firstOrNull;
-    final userOtherAllow = allOther.where((c) =>
-        !(c.isAutoCalculated || c.name.toLowerCase().contains('gross claim'))).toList();
-    final deductions   = comps.where((c) => c.type == 'deduction').toList()
+    final deductions     = comps.where((c) => c.type == 'deduction').toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final totRegular   = regularAllow.fold(0.0, (s, c) => s + c.amount);
-    final period       = '${_monthNames[month - 1]}-$year';
-    final net          = record.netSalary;
+    final totRegular     = regularAllow.fold(0.0, (s, c) => s + c.amount);
+    final totUserOther   = userOtherAllow.fold(0.0, (s, c) => s + c.amount);
+    final grossClaimAmt  = record.baseSalary + totRegular + totUserOther;
+    final grossClaimCode = employee.grossClaimCode ?? '';
+    final period         = '${_monthNames[month - 1]}-$year';
+    final net            = record.netSalary;
     // Pay bill classification codes — from snapshot (historical) then employee fallback
     final mCode  = (ps.basicMonthCode?.isNotEmpty == true ? ps.basicMonthCode : employee.basicMonthCode) ?? '00000';
     final p1Code = (ps.basicPayCode1?.isNotEmpty == true ? ps.basicPayCode1 : employee.basicPayCode1) ?? '011000';
@@ -219,8 +219,9 @@ class PrintService {
           _buildPedoTable(
             record: record,
             regularAllowances: regularAllow,
-            grossClaimComp: grossClaimComp,
             userOtherAllowances: userOtherAllow,
+            grossClaimAmt: grossClaimAmt,
+            grossClaimCode: grossClaimCode,
             totRegular: totRegular,
             deductions: deductions,
             period: period,
@@ -255,8 +256,9 @@ class PrintService {
   static pw.Widget _buildPedoTable({
     required PayrollRecord record,
     required List<PayrollComponent> regularAllowances,
-    required PayrollComponent? grossClaimComp,
     required List<PayrollComponent> userOtherAllowances,
+    required double grossClaimAmt,
+    required String grossClaimCode,
     required double totRegular,
     required List<PayrollComponent> deductions,
     required String period,
@@ -389,34 +391,25 @@ class PrintService {
             _fmt(totRegular), _fmt(totRegular),
             bold: true, hasBorder: true),
 
-        // Two blank classification rows matching the government pay bill format
-        dr('', '03000', '', '', hasBorder: false),
-        dr('', '00000', '', '', hasBorder: true),
-
         // Other Allowance — no border
         sr('Other Allowance', underline: true),
 
-        // Gross Claim — user-entered, always first (sortOrder=0)
-        if (grossClaimComp != null)
-          dr(
-            grossClaimComp.name,
-            grossClaimComp.code ?? '',
-            _fmt(grossClaimComp.amount),
-            _fmt(grossClaimComp.amount),
-            indent: true,
-            hasBorder: userOtherAllowances.isEmpty,
-          ),
+        // Gross Claim — always auto-calculated (never stored in components)
+        dr(
+          'Gross claim-Establishment charges......',
+          grossClaimCode,
+          _fmt(grossClaimAmt),
+          _fmt(grossClaimAmt),
+          indent: true,
+          hasBorder: userOtherAllowances.isEmpty,
+        ),
 
-        // Additional other allowances (non-gross)
+        // User-added other allowances
         ...List.generate(userOtherAllowances.length, (i) {
           final c = userOtherAllowances[i];
           return dr(c.name, c.code ?? '', _fmt(c.amount), _fmt(c.amount),
               indent: true, hasBorder: i == userOtherAllowances.length - 1);
         }),
-
-        // If no other allowances at all, close section with border
-        if (grossClaimComp == null && userOtherAllowances.isEmpty)
-          dr('', '', '', '', hasBorder: true),
 
         // Less-Fund deduction — no border
         sr('Less -Fund deduction', underline: true),

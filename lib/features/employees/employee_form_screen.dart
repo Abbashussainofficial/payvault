@@ -8,7 +8,8 @@ import '../../core/database/database.dart';
 class EmployeeFormScreen extends StatefulWidget {
   final String category;
   final Employee? employee;
-  const EmployeeFormScreen({required this.category, this.employee, super.key});
+  final VoidCallback? onBack;
+  const EmployeeFormScreen({required this.category, this.employee, this.onBack, super.key});
 
   @override
   State<EmployeeFormScreen> createState() => _EmployeeFormScreenState();
@@ -40,6 +41,14 @@ class _EmployeeFormScreenState extends State<EmployeeFormScreen> {
   };
 
   bool get _isEdit => widget.employee != null;
+
+  void _navigateAway() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+    } else {
+      Navigator.pop(context);
+    }
+  }
 
   @override
   void initState() {
@@ -155,7 +164,7 @@ class _EmployeeFormScreenState extends State<EmployeeFormScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pop(context);
+      _navigateAway();
     } catch (e) {
       setState(() { _saveError = 'Failed to save: $e'; _saving = false; });
     }
@@ -179,7 +188,7 @@ class _EmployeeFormScreenState extends State<EmployeeFormScreen> {
             child: Row(
               children: [
                 InkWell(
-                  onTap: () => Navigator.pop(context),
+                  onTap: _navigateAway,
                   borderRadius: BorderRadius.circular(6),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
@@ -451,7 +460,7 @@ class _EmployeeFormScreenState extends State<EmployeeFormScreen> {
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: _navigateAway,
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                                 side: BorderSide(color: cs.outlineVariant),

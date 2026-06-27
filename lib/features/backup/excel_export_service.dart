@@ -234,15 +234,15 @@ class ExcelExportService {
       Sheet sheet, Employee emp, PayrollRecord record, int month, int year) {
     final comps = PayrollComponent.parseSnapshot(record.salarySnapshot);
     final regularAllowances = comps.where((c) => c.type == 'allowance' && (c.section == 'regular' || c.section == null)).toList();
-    // All 'other' allowances sorted by sortOrder — Gross Claim is first (sortOrder=0)
-    final allOther = comps.where((c) => c.type == 'allowance' && c.section == 'other').toList()
+    // User-added other allowances (Gross Claim is auto-calculated, not stored)
+    final otherAllowances = comps.where((c) => c.type == 'allowance' && c.section == 'other' &&
+        !c.name.toLowerCase().contains('gross claim')).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final grossClaimComp = allOther.where((c) =>
-        c.isAutoCalculated || c.name.toLowerCase().contains('gross claim')).firstOrNull;
-    final otherNonGross  = allOther.where((c) =>
-        !(c.isAutoCalculated || c.name.toLowerCase().contains('gross claim'))).toList();
     final deductions     = comps.where((c) => c.type == 'deduction').toList();
     final totRegular     = regularAllowances.fold(0.0, (s, c) => s + c.amount);
+    final totUserOther   = otherAllowances.fold(0.0, (s, c) => s + c.amount);
+    final grossClaimAmt  = record.baseSalary + totRegular + totUserOther;
+    final grossClaimCode = emp.grossClaimCode ?? '';
     final period = '${_monthNames[month - 1]}-$year';
     final net = record.netSalary;
     final bpsStr = emp.bpsGrade != null ? 'BPS-${emp.bpsGrade}' : '';
@@ -339,36 +339,26 @@ class ExcelExportService {
         bold: true, bottom: true,
         rateA: HorizontalAlign.Right, amtA: HorizontalAlign.Right);
 
-    // Two blank classification rows matching the government pay bill format
-    _pedoRow(sheet, r++, desc: '', code: '03000', rate: '', amt: '');
-    _pedoRow(sheet, r++, desc: '', code: '00000', rate: '', amt: '', bottom: true);
-
     _pedoRow(sheet, r++,
         desc: 'Other Allowance', code: '', rate: '', amt: '',
         bold: true, underline: true);
 
-    // Gross Claim — user-entered, always first (sortOrder=0)
-    if (grossClaimComp != null) {
-      _pedoRow(sheet, r++,
-          desc: '   ${grossClaimComp.name}', code: grossClaimComp.code ?? '',
-          rate: _fmt(grossClaimComp.amount), amt: _fmt(grossClaimComp.amount),
-          bottom: otherNonGross.isEmpty,
-          rateA: HorizontalAlign.Right, amtA: HorizontalAlign.Right);
-    }
+    // Gross Claim — always auto-calculated (never stored in components)
+    _pedoRow(sheet, r++,
+        desc: '   Gross claim-Establishment charges......',
+        code: grossClaimCode,
+        rate: _fmt(grossClaimAmt), amt: _fmt(grossClaimAmt),
+        bottom: otherAllowances.isEmpty,
+        rateA: HorizontalAlign.Right, amtA: HorizontalAlign.Right);
 
-    // Additional other allowances (non-gross)
-    if (otherNonGross.isNotEmpty) {
-      for (var i = 0; i < otherNonGross.length; i++) {
-        final c = otherNonGross[i];
-        _pedoRow(sheet, r++,
-            desc: '   ${c.name}', code: c.code ?? '',
-            rate: _fmt(c.amount), amt: _fmt(c.amount),
-            bottom: i == otherNonGross.length - 1,
-            rateA: HorizontalAlign.Right, amtA: HorizontalAlign.Right);
-      }
-    } else if (grossClaimComp == null) {
-      // Neither exists — close section with border
-      _pedoRow(sheet, r++, desc: '', code: '', rate: '', amt: '', bottom: true);
+    // User-added other allowances
+    for (var i = 0; i < otherAllowances.length; i++) {
+      final c = otherAllowances[i];
+      _pedoRow(sheet, r++,
+          desc: '   ${c.name}', code: c.code ?? '',
+          rate: _fmt(c.amount), amt: _fmt(c.amount),
+          bottom: i == otherAllowances.length - 1,
+          rateA: HorizontalAlign.Right, amtA: HorizontalAlign.Right);
     }
 
     _pedoRow(sheet, r++,
